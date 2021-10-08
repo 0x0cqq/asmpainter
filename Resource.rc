@@ -1,0 +1,110 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "winres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 中文(简体，中国) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_CHS)
+LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
+#pragma code_page(936)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""winres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU1 MENU
+BEGIN
+    POPUP "文件"
+    BEGIN
+        MENUITEM "新建",                          ID_NEW
+        MENUITEM "打开",                          ID_OPEN
+        MENUITEM "保存",                          ID_SAVE
+        MENUITEM "另存为",                         ID_SAVE_AS
+        MENUITEM SEPARATOR
+        MENUITEM "退出",                          ID_QUIT
+    END
+    POPUP "编辑"
+    BEGIN
+        MENUITEM "撤销",                          40006
+        MENUITEM "清空",                          ID_CLEAR
+    END
+    POPUP "图像"
+    BEGIN
+        POPUP "工具"
+        BEGIN
+            MENUITEM "画笔",                          40009, CHECKED
+            MENUITEM "橡皮擦",                         40010
+            MENUITEM SEPARATOR
+            MENUITEM "前景色",                         40012
+            MENUITEM "背景色",                         ID_BACK_COLOR
+        END
+        POPUP "画笔粗细"
+        BEGIN
+            MENUITEM "1像素",                         40016, CHECKED
+            MENUITEM "2像素",                         ID_TWO_PIXEL
+            MENUITEM "4像素",                         40019
+        END
+        POPUP "橡皮擦大小"
+        BEGIN
+            MENUITEM "2像素",                         ID_ERA_TOW_PIXEL, CHECKED
+            MENUITEM "4像素",                         ID_ERA_FOUR_PIXEL
+            MENUITEM "8像素",                         ID_ERA_EIGHT_PIXEL
+            MENUITEM "16像素",                        ID_ERA_SIXTEEN_PIXEL
+        END
+        MENUITEM "画布大小",                        40029
+    END
+END
+
+#endif    // 中文(简体，中国) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

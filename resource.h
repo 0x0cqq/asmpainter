@@ -3,6 +3,9 @@
 // π© Resource.rc  π”√
 //
 #define IDR_MENU1                       101
+#define IDI_ICON1                       102
+#define IDB_CONTROLS                    103
+#define IDB_BITMAP1                     105
 #define ID_NEW                          40001
 #define ID_OPEN                         40002
 #define ID_SAVE                         40003
@@ -36,7 +39,7 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        102
+#define _APS_NEXT_RESOURCE_VALUE        106
 #define _APS_NEXT_COMMAND_VALUE         40030
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101

@@ -5,11 +5,14 @@ option casemap:none
 include windows.inc
 include user32.inc
 include kernel32.inc
+include comctl32.inc
+include gdi32.inc
 
 includelib user32.lib
 includelib kernel32.lib
-;---------------EUQç­‰å€¼å®šä¹‰-----------------
-IDR_MENU1            EQU            101
+includelib comctl32.lib
+includelib gdi32.lib
+;---------------EUQµÈÖµ¶¨Òå-----------------
 ID_NEW               EQU            40001
 ID_OPEN              EQU            40002
 ID_SAVE              EQU            40003
@@ -30,36 +33,85 @@ ID_ERA_FOUR_PIXEL    EQU            40026
 ID_ERA_EIGHT_PIXEL   EQU            40027
 ID_ERA_SIXTEEN_PIXEL EQU            40028
 ID_CANVAS_SIZE       EQU            40029
-;-----------------å‡½æ•°åŸå‹å£°æ˜-------------------
-WinMain PROTO                                     ;ä¸»çª—å£
-ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;çª—å£è¿è¡Œä¸­çš„æ¶ˆæ¯å¤„ç†ç¨‹åº
+
+ID_STATUSBAR         EQU            100
+IDR_MENU1            EQU            101
+IDI_ICON1            EQU            102
+IDB_CONTROLS         EQU            103
+
+;-----------------º¯ÊıÔ­ĞÍÉùÃ÷-------------------
+WinMain PROTO                                     ;Ö÷´°¿Ú
+ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;´°¿ÚÔËĞĞÖĞµÄÏûÏ¢´¦Àí³ÌĞò
 
 .data
-  hInstance         dd ?                   ;æœ¬æ¨¡å—çš„å¥æŸ„
-  hWinMain          dd ?                   ;çª—å£å¥æŸ„
-  hMenu             dd ?                   ;èœå•å¥æŸ„
-  hSubMenu          dd ?
+  hInstance         dd ?                   ;±¾Ä£¿éµÄ¾ä±ú
+  hWinMain          dd ?                   ;´°¿Ú¾ä±ú
+  hMenu             dd ?                   ;²Ëµ¥¾ä±ú
+  hWinToolBar       dd ?                   ;¹¤¾ßÀ¸
+  hWndStatusBar     dd ?                   ;×´Ì¬À¸
+  hImageListControl dd ?
+
+  stToolBar  equ   this byte  ;¶¨Òå¹¤¾ßÀ¸°´Å¥
+    TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;ĞÂ½¨
+    TBBUTTON <1,ID_OPEN,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;´ò¿ª
+    TBBUTTON <2,ID_SAVE,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;±£´æ 
+    TBBUTTON <7,ID_UNDO,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;³·»Ø
+    TBBUTTON <4,ID_PEN,TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>;»­±Ê
+    TBBUTTON <5,ID_ERASER,TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>;ÏğÆ¤
+  ControlButtonNum=($-stToolBar)/sizeof TBBUTTON
+
 .const
-  szMainWindowTitle db "Painter",0         ;ä¸»çª—å£æ ‡é¢˜
-  szClassName db "èœå•ä¾‹",0                ;ç±»åç§°ï¼Œä¸çŸ¥é“ä¸ºä»€ä¹ˆï¼Œå…ˆå®šä¹‰ç€
+  szMainWindowTitle            db "»­Í¼",0         ;Ö÷´°¿Ú±êÌâ
+  szWindowClassName            db "MainWindow",0      ;²Ëµ¥ÀàÃû³Æ
+  szToolBarClassName           db "ToolbarWindow32",0         
+  szStatusBarClassName         db "msctls_statusbar32",0       
+
+  lptbab                       TBADDBITMAP  <NULL,?>
 .code
 Quit proc
-  invoke DestroyWindow,hWinMain           ;åˆ é™¤çª—å£
-  invoke PostQuitMessage,NULL             ;åœ¨æ¶ˆæ¯é˜Ÿåˆ—ä¸­æ’å…¥ä¸€ä¸ªWM_QUITæ¶ˆæ¯
+  invoke DestroyWindow,hWinMain           ;É¾³ı´°¿Ú
+  invoke PostQuitMessage,NULL             ;ÔÚÏûÏ¢¶ÓÁĞÖĞ²åÈëÒ»¸öWM_QUITÏûÏ¢
   ret
 Quit endp
 
 ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   local @stPos:POINT
   local @hSysMenu
+  local @hBmp:HBITMAP
+;  local @lptbab:TBADDBITMAP
 
-  mov eax,uMsg   ;æ¶ˆæ¯
+  mov eax,uMsg   ;ÏûÏ¢
   .if eax==WM_CLOSE
      call Quit
+  .elseif eax==WM_CREATE
+  ;-----------------´´½¨×´Ì¬À¸-------------------
+     invoke  CreateStatusWindow,WS_CHILD OR WS_VISIBLE OR \
+        SBS_SIZEGRIP,NULL,hWnd,ID_STATUSBAR
+     mov hWndStatusBar,eax
+  ;-----------------´´½¨¹¤¾ßÀ¸-------------------
+     invoke CreateWindowEx, 0, addr szToolBarClassName, NULL, \
+          CCS_NODIVIDER or WS_CHILD or WS_VISIBLE or WS_CLIPSIBLINGS, 0, 0, 0, 0, \
+          hWnd, NULL, hInstance, NULL
+     mov hWinToolBar,eax
+     invoke ImageList_Create, 32, 32, ILC_COLOR32 or ILC_MASK,8, 0
+     mov hImageListControl, eax
+     invoke LoadBitmap,hInstance,IDB_CONTROLS
+     mov @hBmp,eax
+     invoke ImageList_AddMasked, hImageListControl,@hBmp, 0ffh
+	 invoke DeleteObject,@hBmp
+     invoke SendMessage, hWinToolBar, TB_SETIMAGELIST, 0, hImageListControl
+     invoke SendMessage, hWinToolBar, TB_LOADIMAGES, IDB_STD_LARGE_COLOR, HINST_COMMCTRL
+     invoke SendMessage, hWinToolBar, TB_BUTTONSTRUCTSIZE, sizeof TBBUTTON, 0
+     invoke SendMessage, hWinToolBar, TB_ADDBUTTONS, ControlButtonNum, offset stToolBar
+     invoke SendMessage, hWinToolBar, TB_AUTOSIZE, 0, 0
+   .elseif eax == WM_SIZE
+     ;Ê¹×´Ì¬À¸ºÍ¹¤¾ßÀ¸ËæËõ·Å¶øËõ·Å
+     invoke SendMessage,hWndStatusBar,uMsg,wParam,lParam
+     invoke SendMessage,hWinToolBar,uMsg,wParam,lParam
   .else
-     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;çª—å£è¿‡ç¨‹ä¸­ä¸äºˆå¤„ç†çš„æ¶ˆæ¯ï¼Œä¼ é€’ç»™æ­¤å‡½æ•° 
+     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;´°¿Ú¹ı³ÌÖĞ²»Óè´¦ÀíµÄÏûÏ¢£¬´«µİ¸ø´Ëº¯Êı 
      ret
-     .endif
+     .endif 
   xor eax,eax
   ret
 ProcWinMain endp
@@ -69,56 +121,57 @@ WinMain proc
   local @stMsg:MSG
   local @hAccelerator
 
-  invoke GetModuleHandle,NULL                      ;è·å–æœ¬æ¨¡å—å¥æŸ„
+  invoke GetModuleHandle,NULL                      ;»ñÈ¡±¾Ä£¿é¾ä±ú
   mov hInstance,eax
-  invoke LoadMenu,hInstance,IDR_MENU1              ;è£…è½½ä¸»èœå•ï¼Œæ¨¡å—å¥æŸ„ï¼Œæ¬²è½½å…¥èœå•çš„ID
+  invoke LoadMenu,hInstance,IDR_MENU1              ;×°ÔØÖ÷²Ëµ¥£¬Ä£¿é¾ä±ú£¬ÓûÔØÈë²Ëµ¥µÄID
   mov hMenu,eax
-  invoke LoadAccelerators,hInstance,IDR_MENU1      ;è£…è½½åŠ é€Ÿé”®
+  invoke LoadAccelerators,hInstance,IDR_MENU1      ;×°ÔØ¼ÓËÙ¼ü
   mov @hAccelerator,eax
-  invoke RtlZeroMemory,addr @stWndClass,sizeof @stWndClass ;å†…å­˜æ¸…é›¶
-;  invoke LoadIcon,hInstance,ID_ICON              ;è£…è½½å›¾æ ‡å¥æŸ„
-;  mov @stWndClass.hIcon,eax                       
-;  mov @stWndClass.hIconSm,eax                    ;å°å›¾æ ‡
-  invoke LoadCursor,0,IDC_ARROW                    ;è·å–å…‰æ ‡å¥æŸ„
+  invoke RtlZeroMemory,addr @stWndClass,sizeof @stWndClass ;ÄÚ´æÇåÁã
+  invoke LoadIcon,hInstance,IDI_ICON1              ;×°ÔØÍ¼±ê¾ä±ú
+  mov @stWndClass.hIcon,eax                       
+  mov @stWndClass.hIconSm,eax                    ;Ğ¡Í¼±ê
+  invoke LoadCursor,0,IDC_ARROW                    ;»ñÈ¡¹â±ê¾ä±ú
   mov @stWndClass.hCursor,eax
   push hInstance
-  pop @stWndClass.hInstance                        ;å½“å‰ç¨‹åºçš„å¥æŸ„
-  mov @stWndClass.cbSize,sizeof WNDCLASSEX         ;ç»“æ„ä½“çš„å¤§å°
-  mov @stWndClass.style,CS_HREDRAW or CS_VREDRAW   ;çª—å£é£æ ¼ï¼šå½“ç§»åŠ¨æˆ–å°ºå¯¸è°ƒæ•´æ”¹å˜äº†å®¢æˆ·åŒºåŸŸçš„å®½åº¦/é«˜åº¦ï¼Œåˆ™é‡ç»˜æ•´ä¸ªçª—å£
-  mov @stWndClass.lpfnWndProc,offset ProcWinMain   ;çª—å£è¿‡ç¨‹çš„åœ°å€
-  mov @stWndClass.hbrBackground,COLOR_WINDOW + 1   ;èƒŒæ™¯è‰²
-  mov @stWndClass.lpszClassName,offset szClassName ;ç±»åç§°çš„åœ°å€
-  invoke RegisterClassEx,addr @stWndClass          ;æ³¨å†Œçª—å£
-  ;æ³¨æ„ï¼šä¸è¦æŠŠä¸‹é¢å‡½æ•°è°ƒç”¨çš„æ³¨é‡Šç¼©è¿›æ”¹åˆ°ä¸ä¸Šä¸‹ä¸€è‡´ï¼Œå¦åˆ™å°†æŠ¥é”™ï¼šline too long
-  invoke CreateWindowEx, ;å»ºç«‹çª—å£
-   WS_EX_CLIENTEDGE, ;æ‰©å±•çª—å£é£æ ¼
-   offset szClassName,;æŒ‡å‘ç±»åå­—ç¬¦ä¸²çš„æŒ‡é’ˆ
-   offset szMainWindowTitle, ;æŒ‡å‘çª—å£åç§°å­—ç¬¦ä¸²çš„æŒ‡é’ˆ
-   WS_OVERLAPPEDWINDOW,;çª—å£é£æ ¼
-   100,100,800,600,    ;x,y,çª—å£å®½åº¦,çª—å£é«˜åº¦
-   NULL,  ;çª—å£æ‰€å±çš„çˆ¶çª—å£
-   hMenu, ;çª—å£ä¸Šå°†è¦å‡ºç°çš„èœå•çš„å¥æŸ„
-   hInstance, ;æ¨¡å—å¥æŸ„
-   NULL  ;æŒ‡å‘ä¸€ä¸ªæ¬²ä¼ ç»™çª—å£çš„å‚æ•°çš„æŒ‡é’ˆ
-  mov hWinMain,eax                                 ;è¿”å›çª—å£çš„å¥æŸ„
-  invoke ShowWindow,hWinMain,SW_SHOWNORMAL         ;æ¿€æ´»å¹¶æ˜¾ç¤ºçª—å£
-  invoke UpdateWindow,hWinMain                     ;åˆ·æ–°çª—å£å®¢æˆ·åŒº
+  pop @stWndClass.hInstance                        ;µ±Ç°³ÌĞòµÄ¾ä±ú
+  mov @stWndClass.cbSize,sizeof WNDCLASSEX         ;½á¹¹ÌåµÄ´óĞ¡
+  mov @stWndClass.style,CS_HREDRAW or CS_VREDRAW   ;´°¿Ú·ç¸ñ£ºµ±ÒÆ¶¯»ò³ß´çµ÷Õû¸Ä±äÁË¿Í»§ÇøÓòµÄ¿í¶È/¸ß¶È£¬ÔòÖØ»æÕû¸ö´°¿Ú
+  mov @stWndClass.lpfnWndProc,offset ProcWinMain   ;´°¿Ú¹ı³ÌµÄµØÖ·
+  mov @stWndClass.hbrBackground,COLOR_WINDOW + 1   ;±³¾°É«
+  mov @stWndClass.lpszClassName,offset szWindowClassName ;ÀàÃû³ÆµÄµØÖ·
+  invoke RegisterClassEx,addr @stWndClass          ;×¢²á´°¿Ú
+  ;×¢Òâ£º²»Òª°ÑÏÂÃæº¯Êıµ÷ÓÃµÄ×¢ÊÍËõ½ø¸Äµ½ÓëÉÏÏÂÒ»ÖÂ£¬·ñÔò½«±¨´í£ºline too long
+  invoke CreateWindowEx, ;½¨Á¢´°¿Ú
+    WS_EX_CLIENTEDGE, ;À©Õ¹´°¿Ú·ç¸ñ
+    offset szWindowClassName,;Ö¸ÏòÀàÃû×Ö·û´®µÄÖ¸Õë
+    offset szMainWindowTitle, ;Ö¸Ïò´°¿ÚÃû³Æ×Ö·û´®µÄÖ¸Õë
+    WS_OVERLAPPEDWINDOW,;´°¿Ú·ç¸ñ
+    100,100,800,600,    ;x,y,´°¿Ú¿í¶È,´°¿Ú¸ß¶È
+    NULL,  ;´°¿ÚËùÊôµÄ¸¸´°¿Ú
+    hMenu, ;´°¿ÚÉÏ½«Òª³öÏÖµÄ²Ëµ¥µÄ¾ä±ú
+    hInstance, ;Ä£¿é¾ä±ú
+    NULL  ;Ö¸ÏòÒ»¸öÓû´«¸ø´°¿ÚµÄ²ÎÊıµÄÖ¸Õë
+  mov hWinMain,eax                                 ;·µ»Ø´°¿ÚµÄ¾ä±ú
+  invoke ShowWindow,hWinMain,SW_SHOWNORMAL         ;¼¤»î²¢ÏÔÊ¾´°¿Ú
+  invoke UpdateWindow,hWinMain                     ;Ë¢ĞÂ´°¿Ú¿Í»§Çø
 
+  invoke  InitCommonControls                       ;³õÊ¼»¯£¬±£Ö¤ÏµÍ³¼ÓÔØcomct32.dll¿âÎÄ¼ş
   .while TRUE
-     invoke GetMessage,                            ;ä»æ¶ˆæ¯é˜Ÿåˆ—å–æ¶ˆæ¯
-               addr @stMsg,                        ;æ¶ˆæ¯ç»“æ„çš„åœ°å€
-               NULL,                               ;å–æœ¬ç¨‹åºæ‰€å±çª—å£çš„ä¿¡æ¯
-               0,                                  ;è·å–æ‰€æœ‰ç¼–å·çš„ä¿¡æ¯
-               0                                   ;è·å–æ‰€æœ‰ç¼–å·çš„ä¿¡æ¯
+     invoke GetMessage,                            ;´ÓÏûÏ¢¶ÓÁĞÈ¡ÏûÏ¢
+               addr @stMsg,                        ;ÏûÏ¢½á¹¹µÄµØÖ·
+               NULL,                               ;È¡±¾³ÌĞòËùÊô´°¿ÚµÄĞÅÏ¢
+               0,                                  ;»ñÈ¡ËùÓĞ±àºÅµÄĞÅÏ¢
+               0                                   ;»ñÈ¡ËùÓĞ±àºÅµÄĞÅÏ¢
 
-     .break .if eax==0                             ;æ²¡æœ‰æ¶ˆæ¯ï¼Œåˆ™é€€å‡º
-     invoke TranslateAccelerator,                      ;å®ç°åŠ é€Ÿé”®åŠŸèƒ½
-               hWinMain,                           ;çª—å£å¥æŸ„
-               @hAccelerator,                      ;åŠ é€Ÿé”®å¥æŸ„
-               addr @stMsg                         ;æ¶ˆæ¯ç»“æ„çš„åœ°å€
+     .break .if eax==0                             ;Ã»ÓĞÏûÏ¢£¬ÔòÍË³ö
+     invoke TranslateAccelerator,                  ;ÊµÏÖ¼ÓËÙ¼ü¹¦ÄÜ
+               hWinMain,                           ;´°¿Ú¾ä±ú
+               @hAccelerator,                      ;¼ÓËÙ¼ü¾ä±ú
+               addr @stMsg                         ;ÏûÏ¢½á¹¹µÄµØÖ·
      .if eax==0
-        invoke TranslateMessage,addr @stMsg        ;ä¼ é€æ¶ˆæ¯
-        invoke DispatchMessage,addr @stMsg         ;ä¸åŒæ¶ˆæ¯çª—å£æ¶ˆæ¯åˆ†é…ç»™ä¸åŒçš„çª—å£è¿‡ç¨‹
+        invoke TranslateMessage,addr @stMsg        ;´«ËÍÏûÏ¢
+        invoke DispatchMessage,addr @stMsg         ;²»Í¬ÏûÏ¢´°¿ÚÏûÏ¢·ÖÅä¸ø²»Í¬µÄ´°¿Ú¹ı³Ì
      .endif
   .endw
   ret

@@ -20,13 +20,21 @@
     </MASM>
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="Resource.rc">
+      <Filter>资源文件</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
     <ClInclude Include="resource.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="Resource.rc">
+    <Image Include="E:\大二秋（2021-2022）\汇编与编译原理\汇编大作业\clone\Icon\titleIcon.ico">
       <Filter>资源文件</Filter>
-    </ResourceCompile>
+    </Image>
+    <Image Include="E:\大二秋（2021-2022）\汇编与编译原理\汇编大作业\clone\Icon\control.bmp">
+      <Filter>资源文件</Filter>
+    </Image>
   </ItemGroup>
 </Project>

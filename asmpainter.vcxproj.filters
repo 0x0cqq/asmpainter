@@ -25,10 +25,10 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="E:\大二秋（2021-2022）\汇编与编译原理\汇编大作业\clone\Icon\titleIcon.ico">
+    <Image Include="Icon\titleIcon.ico">
       <Filter>资源文件</Filter>
     </Image>
-    <Image Include="E:\大二秋（2021-2022）\汇编与编译原理\汇编大作业\clone\Icon\control.bmp">
+    <Image Include="Icon\control.bmp">
       <Filter>资源文件</Filter>
     </Image>
   </ItemGroup>

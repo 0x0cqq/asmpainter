@@ -70,7 +70,7 @@ BEGIN
     BEGIN
         POPUP "工具"
         BEGIN
-            MENUITEM "画笔",                          40009, CHECKED
+            MENUITEM "画笔",                          40009
             MENUITEM "橡皮擦",                         40010
             MENUITEM SEPARATOR
             MENUITEM "前景色",                         40012
@@ -78,13 +78,13 @@ BEGIN
         END
         POPUP "画笔粗细"
         BEGIN
-            MENUITEM "1像素",                         40016, CHECKED
+            MENUITEM "1像素",                         ID_ONE_PIXEL, CHECKED
             MENUITEM "2像素",                         ID_TWO_PIXEL
             MENUITEM "4像素",                         40019
         END
         POPUP "橡皮擦大小"
         BEGIN
-            MENUITEM "2像素",                         ID_ERA_TOW_PIXEL, CHECKED
+            MENUITEM "2像素",                         ID_ERA_TWO_PIXEL, CHECKED
             MENUITEM "4像素",                         ID_ERA_FOUR_PIXEL
             MENUITEM "8像素",                         ID_ERA_EIGHT_PIXEL
             MENUITEM "16像素",                        ID_ERA_SIXTEEN_PIXEL
@@ -101,7 +101,7 @@ END
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_ICON1               ICON                    "E:\\大二秋（2021-2022）\\汇编与编译原理\\汇编大作业\\clone\\Icon\\titleIcon.ico"
+IDI_ICON1               ICON                    "Icon\\titleIcon.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -109,7 +109,23 @@ IDI_ICON1               ICON                    "E:\\大二秋（2021-2022）\\汇编与
 // Bitmap
 //
 
-IDB_CONTROLS            BITMAP                  "E:\\大二秋（2021-2022）\\汇编与编译原理\\汇编大作业\\clone\\Icon\\control.bmp"
+IDB_CONTROLS            BITMAP                  "Icon\\control.bmp"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Cursor
+//
+
+IDC_PEN                 CURSOR                  "Icon\\pen.cur"
+
+IDC_ERASER2             CURSOR                  "Icon\\eraser2.cur"
+
+IDC_ERASER4             CURSOR                  "Icon\\eraser4.cur"
+
+IDC_ERASER8             CURSOR                  "Icon\\eraser8.cur"
+
+IDC_ERASER16            CURSOR                  "Icon\\eraser16.cur"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

@@ -5,7 +5,11 @@
 #define IDR_MENU1                       101
 #define IDI_ICON1                       102
 #define IDB_CONTROLS                    103
-#define IDB_BITMAP1                     105
+#define IDC_PEN                         111
+#define IDC_ERASER2                     113
+#define IDC_ERASER4                     114
+#define IDC_ERASER8                     115
+#define IDC_ERASER16                    116
 #define ID_NEW                          40001
 #define ID_OPEN                         40002
 #define ID_SAVE                         40003
@@ -29,7 +33,7 @@
 #define ID_40022                        40022
 #define ID_40023                        40023
 #define ID_40024                        40024
-#define ID_ERA_TOW_PIXEL                40025
+#define ID_ERA_TWO_PIXEL                40025
 #define ID_ERA_FOUR_PIXEL               40026
 #define ID_ERA_EIGHT_PIXEL              40027
 #define ID_ERA_SIXTEEN_PIXEL            40028
@@ -39,7 +43,7 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        106
+#define _APS_NEXT_RESOURCE_VALUE        118
 #define _APS_NEXT_COMMAND_VALUE         40030
 #define _APS_NEXT_CONTROL_VALUE         1001
 #define _APS_NEXT_SYMED_VALUE           101

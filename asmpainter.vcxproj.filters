@@ -25,16 +25,33 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="resource.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-  </ItemGroup>
-  <ItemGroup>
     <Image Include="E:\大二秋（2021-2022）\汇编与编译原理\汇编大作业\clone\Icon\titleIcon.ico">
       <Filter>资源文件</Filter>
     </Image>
     <Image Include="E:\大二秋（2021-2022）\汇编与编译原理\汇编大作业\clone\Icon\control.bmp">
       <Filter>资源文件</Filter>
     </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Icon\pen.cur">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="Icon\eraser4.cur">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="Icon\eraser8.cur">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="Icon\eraser16.cur">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="Icon\eraser2.cur">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
 </Project>

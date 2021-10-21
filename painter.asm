@@ -28,7 +28,7 @@ ID_BACK_COLOR        EQU            40014
 ID_ONE_PIXEL         EQU            40016
 ID_TWO_PIXEL         EQU            40018
 ID_FOUR_PIXEL        EQU            40019
-ID_ERA_TOW_PIXEL     EQU            40025
+ID_ERA_TWO_PIXEL     EQU            40025
 ID_ERA_FOUR_PIXEL    EQU            40026
 ID_ERA_EIGHT_PIXEL   EQU            40027
 ID_ERA_SIXTEEN_PIXEL EQU            40028
@@ -38,7 +38,11 @@ ID_STATUSBAR         EQU            100
 IDR_MENU1            EQU            101
 IDI_ICON1            EQU            102
 IDB_CONTROLS         EQU            103
-
+IDC_PEN              EQU            111
+IDC_ERASER2          EQU            113
+IDC_ERASER4          EQU            114
+IDC_ERASER8          EQU            115
+IDC_ERASER16         EQU            116
 ;-----------------函数原型声明-------------------
 WinMain PROTO                                     ;主窗口
 ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;窗口运行中的消息处理程序
@@ -50,6 +54,11 @@ ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;窗口运行中的消息处理程序
   hWinToolBar       dd ?                   ;工具栏
   hWndStatusBar     dd ?                   ;状态栏
   hImageListControl dd ?
+  hCurPen           dd ?                   ;鼠标光标
+  hCurEraser_2      dd ?                   ;橡皮光标 2像素
+  hCurEraser_4      dd ?
+  hCurEraser_8      dd ?
+  hCurEraser_16     dd ?
 
   stToolBar  equ   this byte  ;定义工具栏按钮
     TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;新建
@@ -78,7 +87,6 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   local @stPos:POINT
   local @hSysMenu
   local @hBmp:HBITMAP
-;  local @lptbab:TBADDBITMAP
 
   mov eax,uMsg   ;消息
   .if eax==WM_CLOSE
@@ -104,10 +112,75 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      invoke SendMessage, hWinToolBar, TB_BUTTONSTRUCTSIZE, sizeof TBBUTTON, 0
      invoke SendMessage, hWinToolBar, TB_ADDBUTTONS, ControlButtonNum, offset stToolBar
      invoke SendMessage, hWinToolBar, TB_AUTOSIZE, 0, 0
-   .elseif eax == WM_SIZE
+   ;--------------------装载光标-------------------
+     invoke LoadCursor,hInstance,IDC_PEN
+     mov hCurPen,eax
+     invoke LoadCursor,hInstance,IDC_ERASER2
+     mov hCurEraser_2,eax
+     invoke LoadCursor,hInstance,IDC_ERASER4
+     mov hCurEraser_4,eax
+     invoke LoadCursor,hInstance,IDC_ERASER8
+     mov hCurEraser_8,eax
+     invoke LoadCursor,hInstance,IDC_ERASER16
+     mov hCurEraser_16,eax
+
+  .elseif eax == WM_SIZE
      ;使状态栏和工具栏随缩放而缩放
      invoke SendMessage,hWndStatusBar,uMsg,wParam,lParam
      invoke SendMessage,hWinToolBar,uMsg,wParam,lParam
+  
+  .elseif eax == WM_COMMAND
+     mov eax,wParam
+     movzx eax,ax
+     ;菜单栏/工具栏点击铅笔/橡皮按钮，进行选中并改变光标
+     .if eax>=ID_PEN && eax<= ID_ERASER
+        mov ebx,eax
+        push ebx
+        invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_ERASER,eax,MF_BYCOMMAND
+        pop ebx
+        mov eax,ebx
+        .if eax == ID_PEN
+            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurPen
+         .elseif eax == ID_ERASER
+            invoke GetMenuState,hMenu,ID_ERA_TWO_PIXEL,MF_BYCOMMAND
+            .if eax & MF_CHECKED
+               invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_2
+            .endif
+             invoke GetMenuState,hMenu,ID_ERA_FOUR_PIXEL,MF_BYCOMMAND
+            .if eax & MF_CHECKED
+               invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_4
+            .endif
+             invoke GetMenuState,hMenu,ID_ERA_EIGHT_PIXEL,MF_BYCOMMAND
+            .if eax & MF_CHECKED
+               invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_8
+            .endif
+             invoke GetMenuState,hMenu,ID_ERA_SIXTEEN_PIXEL,MF_BYCOMMAND
+            .if eax & MF_CHECKED
+               invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_16
+            .endif
+         .endif
+     ;菜单栏改变笔/橡皮的像素大小，进行选中
+     .elseif eax>=ID_ONE_PIXEL && eax<=ID_FOUR_PIXEL
+         invoke CheckMenuRadioItem,hMenu,ID_ONE_PIXEL,ID_FOUR_PIXEL,eax,MF_BYCOMMAND
+     .elseif eax>=ID_ERA_TWO_PIXEL && eax<=ID_ERA_SIXTEEN_PIXEL
+         mov ebx,eax
+         push ebx
+         invoke CheckMenuRadioItem,hMenu,ID_ERA_TWO_PIXEL,ID_ERA_SIXTEEN_PIXEL,eax,MF_BYCOMMAND
+         pop ebx
+         mov eax,ebx
+         .if eax==ID_ERA_TWO_PIXEL
+            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_2
+         .elseif eax==ID_ERA_FOUR_PIXEL
+            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_4
+         .elseif eax==ID_ERA_EIGHT_PIXEL
+            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_8
+         .elseif eax==ID_ERA_SIXTEEN_PIXEL
+            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_16
+         .endif
+     ;菜单栏退出功能
+     .elseif eax ==ID_QUIT
+         call Quit
+     .endif  
   .else
      invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数 
      ret
@@ -130,7 +203,7 @@ WinMain proc
   invoke RtlZeroMemory,addr @stWndClass,sizeof @stWndClass ;内存清零
   invoke LoadIcon,hInstance,IDI_ICON1              ;装载图标句柄
   mov @stWndClass.hIcon,eax                       
-  mov @stWndClass.hIconSm,eax                    ;小图标
+  mov @stWndClass.hIconSm,eax                      ;小图标
   invoke LoadCursor,0,IDC_ARROW                    ;获取光标句柄
   mov @stWndClass.hCursor,eax
   push hInstance

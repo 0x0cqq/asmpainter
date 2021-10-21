@@ -28,8 +28,8 @@
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="E:\大二秋（2021-2022）\汇编与编译原理\汇编大作业\clone\Icon\control.bmp" />
-    <Image Include="E:\大二秋（2021-2022）\汇编与编译原理\汇编大作业\clone\Icon\titleIcon.ico" />
+    <Image Include="Icon\control.bmp" />
+    <Image Include="Icon\titleIcon.ico" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>

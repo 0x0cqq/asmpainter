@@ -9,10 +9,11 @@ include comctl32.inc
 include gdi32.inc
 
 includelib user32.lib
+includelib msvcrt.lib
 includelib kernel32.lib
 includelib comctl32.lib
 includelib gdi32.lib
-;---------------EUQ等值定义-----------------
+;---------------EQU等值定义-----------------
 ID_NEW               EQU            40001
 ID_OPEN              EQU            40002
 ID_SAVE              EQU            40003
@@ -42,13 +43,19 @@ IDB_CONTROLS         EQU            103
 ;-----------------函数原型声明-------------------
 WinMain PROTO                                     ;主窗口
 ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;窗口运行中的消息处理程序
+ProcWinCanvas PROTO :DWORD,:DWORD,:DWORD,:DWORD   ;画布窗口运行中的消息处理程序
+CreateCanvasWin PROTO
+UpdateCanvasPos PROTO
+printf PROTO C :PTR BYTE, :VARARG
+
 
 .data
   hInstance         dd ?                   ;本模块的句柄
   hWinMain          dd ?                   ;窗口句柄
+  hCanvas           dd ?                   ;画布句柄
   hMenu             dd ?                   ;菜单句柄
   hWinToolBar       dd ?                   ;工具栏
-  hWndStatusBar     dd ?                   ;状态栏
+  hWinStatusBar     dd ?                   ;状态栏
   hImageListControl dd ?
 
   stToolBar  equ   this byte  ;定义工具栏按钮
@@ -65,15 +72,94 @@ ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;窗口运行中的消息处理程序
   szWindowClassName            db "MainWindow",0      ;菜单类名称
   szToolBarClassName           db "ToolbarWindow32",0         
   szStatusBarClassName         db "msctls_statusbar32",0       
-
+  szCanvasClassName            db "画布", 0
   lptbab                       TBADDBITMAP  <NULL,?>
+
+  debugUINT  db "%u", 0Ah, 0Dh, 0
 .code
+
+; 宏定义
+m2m macro M1, M2  
+	push M2
+	pop M1
+endm
+
+
+return macro arg
+	mov eax, arg
+	ret
+endm
+
+
 Quit proc
   invoke DestroyWindow,hWinMain           ;删除窗口
   invoke PostQuitMessage,NULL             ;在消息队列中插入一个WM_QUIT消息
   ret
 Quit endp
 
+; 画布的 proc
+ProcWinCanvas proc hWnd, uMsg, wParam, lParam
+    ; 先写一个缩放的功能
+  .if uMsg == WM_CREATE
+    invoke UpdateCanvasPos
+  .elseif uMsg == WM_SIZE
+    invoke UpdateCanvasPos
+  .elseif uMsg == WM_PAINT
+    invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
+    ret
+  .else 
+    invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
+    ret 
+  .endif
+  xor eax,eax
+	ret
+ProcWinCanvas endp
+
+; 创建画布窗口
+CreateCanvasWin proc
+  ;invoke MessageBox, hWinMain,addr szClassName,NULL,MB_OK
+  ;创建画布窗口
+  invoke CreateWindowEx,
+    0,
+    addr szCanvasClassName,
+    NULL,
+    WS_HSCROLL or WS_VSCROLL or WS_CHILD,
+    0,0,400,300,
+    hWinMain,
+    NULL,
+    hInstance,
+    NULL
+  mov hCanvas, eax
+  invoke ShowWindow, hCanvas, SW_SHOW
+  ret
+CreateCanvasWin endp
+
+; 更新画布的位置
+UpdateCanvasPos proc uses ecx edx ebx
+  local mWinRect:RECT
+  local StatusBarRect:RECT
+  local ToolBarRect:RECT
+  local canvasRect: RECT
+  ; 因为 Menu 不在 ClientRect 之中，只需要考虑 Status 和 ToolBar
+  
+  invoke GetClientRect,hWinMain,addr mWinRect ; 相对坐标
+  invoke GetWindowRect,hWinStatusBar,addr StatusBarRect ;绝对坐标
+  invoke GetWindowRect,hWinToolBar ,addr ToolBarRect    ;绝对坐标
+  ; 计算横向长度
+  mov ecx, mWinRect.right
+  sub ecx, mWinRect.left
+  ; 计算纵向长度
+  mov edx, StatusBarRect.top
+  sub edx, ToolBarRect.bottom
+  ; 排除掉工具栏
+  mov ebx, ToolBarRect.bottom
+  sub ebx, ToolBarRect.top
+  
+  invoke SetWindowPos,hCanvas,HWND_TOP,mWinRect.left,ebx,ecx,edx,SWP_SHOWWINDOW  
+  ret  
+UpdateCanvasPos endp
+
+;主窗口 的 proc 
 ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   local @stPos:POINT
   local @hSysMenu
@@ -84,10 +170,11 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   .if eax==WM_CLOSE
      call Quit
   .elseif eax==WM_CREATE
+     m2m hWinMain, hWnd ; 因为这个时候 WinMain 还有可能没有被移到里面去
   ;-----------------创建状态栏-------------------
      invoke  CreateStatusWindow,WS_CHILD OR WS_VISIBLE OR \
         SBS_SIZEGRIP,NULL,hWnd,ID_STATUSBAR
-     mov hWndStatusBar,eax
+     mov hWinStatusBar,eax
   ;-----------------创建工具栏-------------------
      invoke CreateWindowEx, 0, addr szToolBarClassName, NULL, \
           CCS_NODIVIDER or WS_CHILD or WS_VISIBLE or WS_CLIPSIBLINGS, 0, 0, 0, 0, \
@@ -98,6 +185,8 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      invoke LoadBitmap,hInstance,IDB_CONTROLS
      mov @hBmp,eax
      invoke ImageList_AddMasked, hImageListControl,@hBmp, 0ffh
+  ;-----------------创建画布窗口-------------------
+     invoke CreateCanvasWin
 	 invoke DeleteObject,@hBmp
      invoke SendMessage, hWinToolBar, TB_SETIMAGELIST, 0, hImageListControl
      invoke SendMessage, hWinToolBar, TB_LOADIMAGES, IDB_STD_LARGE_COLOR, HINST_COMMCTRL
@@ -105,8 +194,10 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      invoke SendMessage, hWinToolBar, TB_ADDBUTTONS, ControlButtonNum, offset stToolBar
      invoke SendMessage, hWinToolBar, TB_AUTOSIZE, 0, 0
    .elseif eax == WM_SIZE
+     ;调整画布的位置
+     invoke SendMessage,hCanvas,uMsg,wParam,lParam
      ;使状态栏和工具栏随缩放而缩放
-     invoke SendMessage,hWndStatusBar,uMsg,wParam,lParam
+     invoke SendMessage,hWinStatusBar,uMsg,wParam,lParam
      invoke SendMessage,hWinToolBar,uMsg,wParam,lParam
   .else
      invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数 
@@ -118,6 +209,7 @@ ProcWinMain endp
 
 WinMain proc 
   local @stWndClass:WNDCLASSEX
+  local @canvasWndClass:WNDCLASSEX
   local @stMsg:MSG
   local @hAccelerator
 
@@ -127,6 +219,8 @@ WinMain proc
   mov hMenu,eax
   invoke LoadAccelerators,hInstance,IDR_MENU1      ;装载加速键
   mov @hAccelerator,eax
+
+  ; 注册主窗口类
   invoke RtlZeroMemory,addr @stWndClass,sizeof @stWndClass ;内存清零
   invoke LoadIcon,hInstance,IDI_ICON1              ;装载图标句柄
   mov @stWndClass.hIcon,eax                       
@@ -141,6 +235,21 @@ WinMain proc
   mov @stWndClass.hbrBackground,COLOR_WINDOW + 1   ;背景色
   mov @stWndClass.lpszClassName,offset szWindowClassName ;类名称的地址
   invoke RegisterClassEx,addr @stWndClass          ;注册窗口
+  
+  ; 注册画布窗口类 
+  invoke RtlZeroMemory,addr @canvasWndClass,sizeof @canvasWndClass ;内存清零
+  invoke LoadCursor,0,IDC_ARROW                    ;获取光标句柄
+  mov @canvasWndClass.hCursor, eax
+  m2m @canvasWndClass.hInstance, hInstance
+  mov @canvasWndClass.cbSize, sizeof WNDCLASSEX
+  mov @canvasWndClass.style, CS_HREDRAW or CS_VREDRAW
+  mov @canvasWndClass.lpfnWndProc, offset ProcWinCanvas
+  invoke CreateSolidBrush, 000000FFh
+  mov @canvasWndClass.hbrBackground, eax
+  mov @canvasWndClass.lpszClassName, offset szCanvasClassName
+  invoke RegisterClassEx, addr @canvasWndClass
+
+
   ;注意：不要把下面函数调用的注释缩进改到与上下一致，否则将报错：line too long
   invoke CreateWindowEx, ;建立窗口
     WS_EX_CLIENTEDGE, ;扩展窗口风格
@@ -152,7 +261,7 @@ WinMain proc
     hMenu, ;窗口上将要出现的菜单的句柄
     hInstance, ;模块句柄
     NULL  ;指向一个欲传给窗口的参数的指针
-  mov hWinMain,eax                                 ;返回窗口的句柄
+  mov hWinMain,eax                                 ;返回窗口的句柄（理论上前面做过了
   invoke ShowWindow,hWinMain,SW_SHOWNORMAL         ;激活并显示窗口
   invoke UpdateWindow,hWinMain                     ;刷新窗口客户区
 

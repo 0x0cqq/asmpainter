@@ -101,7 +101,7 @@ END
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_ICON1               ICON                    "E:\\大二秋（2021-2022）\\汇编与编译原理\\汇编大作业\\clone\\Icon\\titleIcon.ico"
+IDI_ICON1               ICON                    "Icon\\titleIcon.ico"
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -109,7 +109,7 @@ IDI_ICON1               ICON                    "E:\\大二秋（2021-2022）\\汇编与
 // Bitmap
 //
 
-IDB_CONTROLS            BITMAP                  "E:\\大二秋（2021-2022）\\汇编与编译原理\\汇编大作业\\clone\\Icon\\control.bmp"
+IDB_CONTROLS            BITMAP                  "Icon\\control.bmp"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

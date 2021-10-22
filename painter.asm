@@ -7,13 +7,11 @@ include user32.inc
 include kernel32.inc
 include comctl32.inc
 include gdi32.inc
-include comdlg32.inc
 
 includelib user32.lib
 includelib kernel32.lib
 includelib comctl32.lib
 includelib gdi32.lib
-includelib comdlg32.lib
 ;---------------EUQ等值定义-----------------
 ID_NEW               EQU            40001
 ID_OPEN              EQU            40002
@@ -61,20 +59,14 @@ ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;窗口运行中的消息处理程序
   hCurEraser_4      dd ?
   hCurEraser_8      dd ?
   hCurEraser_16     dd ?
-  
-  foregroundColor       dd ?               ;前景色
-  backgroundColor       dd ?               ;背景色
-  customColorBuffer     dd 16 dup(?)       ;颜色缓冲区，用于自定义颜色
 
   stToolBar  equ   this byte  ;定义工具栏按钮
     TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;新建
     TBBUTTON <1,ID_OPEN,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;打开
-    TBBUTTON <2,ID_SAVE,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;保存
+    TBBUTTON <2,ID_SAVE,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;保存 
     TBBUTTON <7,ID_UNDO,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;撤回
     TBBUTTON <4,ID_PEN,TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>;画笔
     TBBUTTON <5,ID_ERASER,TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>;橡皮
-    TBBUTTON <10,ID_FOR_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;前景色
-    TBBUTTON <11,ID_BACK_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;背景色
   ControlButtonNum=($-stToolBar)/sizeof TBBUTTON
 
 .const
@@ -91,90 +83,6 @@ Quit proc
   ret
 Quit endp
 
-SetColorInTool proc index:DWORD, color:DWORD
-    ;TODO:该函数根据index(前/背景色)和color颜色
-    ;     绘制工具栏上的按钮位图
-    LOCAL @rect:RECT
-    LOCAL @hdcW:HDC
-    LOCAL @hdc:HDC
-    LOCAL @hbmp:HBITMAP
-    LOCAL @hbmpM:HBITMAP
-    LOCAL @hbrush:HBRUSH
-    LOCAL @hgraybrush:HBRUSH
- 
-    mov @rect.left,0
-    mov @rect.right,32
-    mov @rect.top,0
-    mov @rect.bottom,32
-    
-    mov ebx,color
-    .if index==0
-       mov foregroundColor,ebx
-    .else
-       mov backgroundColor,ebx
-    .endif
-
-    invoke GetDC,hWinMain
-    mov @hdcW,eax
-    invoke CreateCompatibleDC,@hdcW
-    mov @hdc,eax
-
-    invoke CreateCompatibleBitmap,@hdcW,32,32
-    mov @hbmp,eax
-    invoke SelectObject,@hdc,@hbmp
-    invoke CreateSolidBrush,color
-    mov @hbrush,eax
-    invoke FillRect,@hdc,addr @rect, @hbrush
-    invoke DeleteObject,@hbrush
-    invoke GetStockObject,GRAY_BRUSH
-    mov @hgraybrush,eax
-    invoke FrameRect,@hdc,addr @rect, @hgraybrush
-
-    invoke CreateCompatibleBitmap,@hdcW,32,32
-    mov @hbmpM,eax
-    invoke SelectObject,@hdc,@hbmpM
-    invoke GetStockObject,BLACK_BRUSH
-    mov @hbrush,eax
-    invoke FillRect,@hdc,addr @rect,@hbrush
-   
-    mov eax,index
-    add eax,10
-    mov index,eax
-
-    invoke ImageList_Replace,hImageListControl,index,@hbmp,@hbmpM
-    
-    invoke DeleteDC,@hdc
-    invoke DeleteObject,@hbmp
-    invoke DeleteObject,@hbmpM
-    invoke DeleteDC,@hdcW
-
-    invoke InvalidateRect, hWinToolBar, NULL, FALSE
-    ret
-SetColorInTool endp
-
-SetColor proc, index:DWORD
-  ;TODO:该函数根据index设置前景色，背景色
-  ;index=0,设置前景色
-  ;index=1,设置背景色
-  local @stcc:CHOOSECOLOR
-
-  invoke RtlZeroMemory,addr @stcc,sizeof @stcc;用0填充stcc内存区域
-  mov @stcc.lStructSize,sizeof @stcc
-  push hWinMain
-  pop @stcc.hwndOwner
-  .if index==0
-     mov eax,foregroundColor
-  .elseif index==1
-     mov eax,backgroundColor
-  .endif
-  mov @stcc.rgbResult,eax
-  mov @stcc.Flags,CC_RGBINIT
-  mov @stcc.lpCustColors,offset customColorBuffer
-  invoke ChooseColor,addr @stcc
-  invoke SetColorInTool,index,@stcc.rgbResult
-  ret
-SetColor endp
-
 ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   local @stPos:POINT
   local @hSysMenu
@@ -190,25 +98,21 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      mov hWndStatusBar,eax
   ;-----------------创建工具栏-------------------
      invoke CreateWindowEx, 0, addr szToolBarClassName, NULL, \
-          CCS_NODIVIDER or WS_CHILD or WS_VISIBLE or WS_CLIPSIBLINGS,\
-          0, 0, 0, 0, hWnd, NULL, hInstance, NULL
+          CCS_NODIVIDER or WS_CHILD or WS_VISIBLE or WS_CLIPSIBLINGS, 0, 0, 0, 0, \
+          hWnd, NULL, hInstance, NULL
      mov hWinToolBar,eax
-     invoke ImageList_Create, 32, 32, ILC_COLOR24 or ILC_MASK,8, 0
+     invoke ImageList_Create, 32, 32, ILC_COLOR32 or ILC_MASK,8, 0
      mov hImageListControl, eax
      invoke LoadBitmap,hInstance,IDB_CONTROLS
      mov @hBmp,eax
      invoke ImageList_AddMasked, hImageListControl,@hBmp, 0ffh
 	 invoke DeleteObject,@hBmp
-     invoke SetColorInTool,0,0
-     invoke SetColorInTool,1,0ffffffh
      invoke SendMessage, hWinToolBar, TB_SETIMAGELIST, 0, hImageListControl
      invoke SendMessage, hWinToolBar, TB_LOADIMAGES, IDB_STD_LARGE_COLOR, HINST_COMMCTRL
      invoke SendMessage, hWinToolBar, TB_BUTTONSTRUCTSIZE, sizeof TBBUTTON, 0
      invoke SendMessage, hWinToolBar, TB_ADDBUTTONS, ControlButtonNum, offset stToolBar
      invoke SendMessage, hWinToolBar, TB_AUTOSIZE, 0, 0
-     ;在工具栏中添加前景色和背景色的选择
-
-   ;------------------装载光标-------------------
+   ;--------------------装载光标-------------------
      invoke LoadCursor,hInstance,IDC_PEN
      mov hCurPen,eax
      invoke LoadCursor,hInstance,IDC_ERASER2
@@ -274,12 +178,8 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
             invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_16
          .endif
      ;菜单栏退出功能
-     .elseif eax == ID_QUIT
+     .elseif eax ==ID_QUIT
          call Quit
-     .elseif eax == ID_FOR_COLOR
-         invoke SetColor,0
-     .elseif eax == ID_BACK_COLOR
-         invoke SetColor,1
      .endif  
   .else
      invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数 

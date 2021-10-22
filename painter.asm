@@ -67,6 +67,10 @@ printf PROTO C :PTR BYTE, :VARARG
   hCurEraser_8      dd ?
   hCurEraser_16     dd ?
 
+  hdcCanvas         dd ?  ; canvas 的 dc
+  memdc             dd ?  ;一个在 memory 中的 dc
+  membm             dd ?  ;一个在 memory 中的 bitmap
+
   stToolBar  equ   this byte  ;定义工具栏按钮
     TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;新建
     TBBUTTON <1,ID_OPEN,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;打开
@@ -89,16 +93,36 @@ printf PROTO C :PTR BYTE, :VARARG
 
 ; 宏定义
 m2m macro M1, M2  
-	push M2
-	pop M1
+  push M2
+  pop M1
 endm
 
 
 return macro arg
-	mov eax, arg
-	ret
+  mov eax, arg
+  ret
 endm
 
+CStr macro text
+  local text_var
+    .const                           ; Open the const section
+  text_var db text,0                 ; Add the text to text_var
+    .code                            ; Reopen the code section
+  exitm                              ; Return the offset of test_var address
+endm
+
+
+CTEXT MACRO y:VARARG
+  LOCAL sym
+  CONST segment
+  IFIDNI <y>,<>
+    sym db 0
+  ELSE
+    sym db y,0
+  ENDIF
+  CONST ends
+  EXITM <OFFSET sym>
+ENDM
 
 Quit proc
   invoke DestroyWindow,hWinMain           ;删除窗口
@@ -110,19 +134,22 @@ Quit endp
 ProcWinCanvas proc hWnd, uMsg, wParam, lParam
     ; 先写一个缩放的功能
   .if uMsg == WM_CREATE
+    m2m hCanvas, hWnd
     invoke UpdateCanvasPos
   .elseif uMsg == WM_SIZE
     invoke UpdateCanvasPos
   .elseif uMsg == WM_PAINT
-    invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
+    invoke MessageBox, hCanvas, CTEXT("1"), CTEXT("2"), MB_OK
+    ;invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
     ret
   .else 
     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
-    ret 
+    ret
   .endif
   xor eax,eax
-	ret
+  ret
 ProcWinCanvas endp
+
 
 ; 创建画布窗口
 CreateCanvasWin proc
@@ -143,12 +170,24 @@ CreateCanvasWin proc
   ret
 CreateCanvasWin endp
 
+DrawTextonCanvas proc 
+  local hdc: HDC
+  local rect: RECT
+  local ps : PAINTSTRUCT
+  invoke BeginPaint, hCanvas, addr ps
+  mov hdc, eax
+  invoke GetClientRect, hCanvas, addr rect
+  invoke DrawText, hdc, CTEXT("test"), -1, addr rect , DT_SINGLELINE or DT_CENTER or DT_VCENTER
+ 
+  invoke EndPaint, hCanvas, addr ps
+  ret
+DrawTextonCanvas endp
+
 ; 更新画布的位置
 UpdateCanvasPos proc uses ecx edx ebx
   local mWinRect:RECT
   local StatusBarRect:RECT
   local ToolBarRect:RECT
-  local canvasRect: RECT
   ; 因为 Menu 不在 ClientRect 之中，只需要考虑 Status 和 ToolBar
   
   invoke GetClientRect,hWinMain,addr mWinRect ; 相对坐标
@@ -163,10 +202,13 @@ UpdateCanvasPos proc uses ecx edx ebx
   ; 排除掉工具栏
   mov ebx, ToolBarRect.bottom
   sub ebx, ToolBarRect.top
-  
-  invoke SetWindowPos,hCanvas,HWND_TOP,mWinRect.left,ebx,ecx,edx,SWP_SHOWWINDOW  
+
+  invoke SetWindowPos,hCanvas,HWND_TOP,mWinRect.left,ebx,ecx,edx,SWP_SHOWWINDOW
+
+  ;invoke DrawTextonCanvas
   ret  
 UpdateCanvasPos endp
+
 
 ;主窗口 的 proc 
 ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
@@ -195,7 +237,7 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      invoke ImageList_AddMasked, hImageListControl,@hBmp, 0ffh
   ;-----------------创建画布窗口-------------------
      invoke CreateCanvasWin
-	 invoke DeleteObject,@hBmp
+   invoke DeleteObject,@hBmp
      invoke SendMessage, hWinToolBar, TB_SETIMAGELIST, 0, hImageListControl
      invoke SendMessage, hWinToolBar, TB_LOADIMAGES, IDB_STD_LARGE_COLOR, HINST_COMMCTRL
      invoke SendMessage, hWinToolBar, TB_BUTTONSTRUCTSIZE, sizeof TBBUTTON, 0
@@ -316,7 +358,7 @@ WinMain proc
   mov @canvasWndClass.cbSize, sizeof WNDCLASSEX
   mov @canvasWndClass.style, CS_HREDRAW or CS_VREDRAW
   mov @canvasWndClass.lpfnWndProc, offset ProcWinCanvas
-  invoke CreateSolidBrush, 000000FFh
+  invoke CreateSolidBrush, 0abababh
   mov @canvasWndClass.hbrBackground, eax
   mov @canvasWndClass.lpszClassName, offset szCanvasClassName
   invoke RegisterClassEx, addr @canvasWndClass

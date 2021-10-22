@@ -52,6 +52,12 @@ CreateCanvasWin PROTO
 UpdateCanvasPos PROTO
 printf PROTO C :PTR BYTE, :VARARG
 
+mBitmap STRUCT
+  bitmap HBITMAP ?
+  nWidth DWORD ?
+  nHeight DWORD ?
+mBitmap ENDS
+
 
 .data
   hInstance         dd ?                   ;本模块的句柄
@@ -67,9 +73,21 @@ printf PROTO C :PTR BYTE, :VARARG
   hCurEraser_8      dd ?
   hCurEraser_16     dd ?
 
-  hdcCanvas         dd ?  ; canvas 的 dc
-  memdc             dd ?  ;一个在 memory 中的 dc
-  membm             dd ?  ;一个在 memory 中的 bitmap
+  ;主要为画布所使用的变量
+  ; 以下的大小均为逻辑像素，而非屏幕上实际显示的单个像素
+  defaultCanvasWidth      equ 800
+  defaultCanvasHeight     equ 600
+  nowCanvasWidth          dd ?
+  nowCanvasHeight         dd ? 
+  nowCanvasOffsetX        dd ?
+  nowCanvasOffsetY        dd ?
+  nowCanvasZoomLevel      dd 1 ; 一个逻辑像素在屏幕上占据几个实际像素的宽度
+
+  historyNums       equ 50                             ;存储 50 条历史记录
+  historyBitmap     mBitmap historyNums DUP(<>)  ;历史记录的位图
+  ; baseDCBuf        HDC ? ; 某次绘制位图的基础画板
+  drawDCBuf        HDC ?   ; 绘制了当前绘制的画板
+
 
   stToolBar  equ   this byte  ;定义工具栏按钮
     TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;新建
@@ -124,27 +142,121 @@ CTEXT MACRO y:VARARG
   EXITM <OFFSET sym>
 ENDM
 
+; 将相对于 Canvas Windows Client Area 的像素坐标转换成为 Canvas 的逻辑坐标
+CoordWindowToCanvas proc coordWindows:POINT, coordCanvas: PTR POINT
+  ;TODO
+CoordWindowToCanvas endp
+
+; 将 Canvas 的逻辑坐标相对于 Canvas Windows Client Area 的像素坐标转换成为 
+CoordCanvasToWindow proc coordCanvas:POINT, coordWindow : PTR POINT
+  ;TODO
+CoordCanvasToWindow endp
+
 Quit proc
   invoke DestroyWindow,hWinMain           ;删除窗口
   invoke PostQuitMessage,NULL             ;在消息队列中插入一个WM_QUIT消息
   ret
 Quit endp
 
+; 复制 HistoryBitmap 最后的一个到DrawBuf
+UpdateDrawBufFromHistoryBitmap proc
+
+UpdateDrawBufFromHistoryBitmap endp
+
+; 重置整个历史，并且把参数的 bitmap 放到第一个位置上
+InitHistory proc bitmap: HBITMAP
+
+InitHistory endp
+
+; 处理画布创建
+; 理论上最开始的时候调用一次
+HandleCanvasCreate proc
+  invoke UpdateCanvasPos ; 更新位置
+  ;在 HistoryBitmap 中插入一个“空白Bitmap” InitHistory
+  ; UpdateDrawBufFromHistoryBitmap
+  ; invalidaterect 掉整个矩形，或者想办法发一个 WM_PAINT
+  ; 反正需要调用 RenderBitmap函数，但最好别直接调用
+HandleCanvasCreate endp
+
+; 从文件加载
+LoadBitmapFromFile proc
+
+LoadBitmapFromFile endp
+
+;保存到文件
+SaveBitmapToFile proc
+
+SaveBitmapToFile endp
+
+; 处理左键按下，也就是开始画图
+HandleLButtonDown proc wParam:DWORD, lParam:DWORD
+  ;TODO
+  ; 标记左键按下
+  ; 复制 HistoryBitmap 到 Buffer 中
+  ; 需要记录最开始的点
+  xor eax, eax
+  ret
+HandleLButtonDown endp
+
+; 处理左键抬起，也就是结束画图
+HandleLButtonUp proc wParam:DWORD, lParam:DWORD
+  ; 标记左键抬起
+  ; 把 DrawBuf 的 Bitmap 放置到 HistoryBitmap 中 
+  ; Repaint 
+  xor eax, eax
+  ret
+HandleLButtonUp endp
+
+; 处理鼠标移动，也就是正在画图
+HandleMouseMove proc wParam:DWORD, lParam:DWORD
+  ; 判断一下当前是什么移动（需要用一个全局变量维护一下状态栏里面的选取）
+  ; 如果不是笔和橡皮这种连续的，就重新复制 HistoryBitmap 到 Buffer 中
+  ; 获取当前的鼠标位置（窗口的逻辑坐标），需要利用坐标系变换转换到画布的逻辑坐标
+  ; 然后利用这个去画矩形。圆角矩形之类的
+  ; 对于笔和橡皮，需要更新“最新的鼠标的位置”
+  ; 对于笔和橡皮，可以认为两个 MouseMove 之间的时间很短，因此直接连直线
+  xor eax, eax
+  ret
+HandleMouseMove endp
+
+; 处理鼠标移动开画板，目前没想到没什么要做的？
+HandleMouseLeave proc wParam:DWORD, lParam:DWORD
+  xor eax,eax
+  ret
+HandleMouseLeave endp
+
+
+; 将 drawDCBuf 按照合适的比例和偏移复制到 hCanvas 的 DC 上面
+RenderBitmap proc
+  ; 计算范围
+  ; 将计算后的范围利用 StretchBlt 复制到 一个temp 的buffer上面
+  ; 将 tempbuffer 移动到 Buffer 上面
+RenderBitmap endp
+
 ; 画布的 proc
 ProcWinCanvas proc hWnd, uMsg, wParam, lParam
-    ; 先写一个缩放的功能
   .if uMsg == WM_CREATE
     m2m hCanvas, hWnd
-    invoke UpdateCanvasPos
+    invoke HandleCanvasCreate
+  .elseif uMsg == WM_LBUTTONDOWN
+    invoke HandleLButtonDown, wParam, lParam 
+  .elseif uMsg == WM_LBUTTONUP
+    invoke HandleLButtonUp, wParam, lParam
+  .elseif uMsg == WM_MOUSEMOVE
+    invoke HandleMouseMove, wParam, lParam
+  .elseif uMsg == WM_MOUSELEAVE
+    invoke HandleMouseLeave, wParam, lParam
+  .elseif uMsg == WM_MOUSEWHEEL
+    ;default 
+    invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
+    ret
   .elseif uMsg == WM_SIZE
     invoke UpdateCanvasPos
   .elseif uMsg == WM_PAINT
-    invoke MessageBox, hCanvas, CTEXT("1"), CTEXT("2"), MB_OK
-    ;invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
-    ret
+    invoke RenderBitmap
   .else 
     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
-    ret
+    ret ; 这个地方必须要 ret ，因为要返回 DefWindowProc 的返回值
   .endif
   xor eax,eax
   ret

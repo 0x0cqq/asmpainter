@@ -21,7 +21,7 @@ GDI 绝大部分的画图函数的第一个参数即为 hDC，是 Device Context
 [^1]: 中文直接翻译为“设备上下文”，但事实上 Contexts 很难找到一个完全对应的中文概念，因此下面就不做翻译。
 [^2]: [About Device Contexts - Win32 apps | Microsoft Docs](https://docs.microsoft.com/en-us/windows/win32/gdi/about-device-contexts)
 
-[^3 ]: 但既然可以搭一层缓冲区，那么如果把”绘图的目的地“换成内存，就构成了双重缓冲
+[^3]: 但既然可以搭一层缓冲区，那么如果把”绘图的目的地“换成内存，就构成了双重缓冲
 
 ---
 

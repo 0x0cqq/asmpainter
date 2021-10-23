@@ -73,7 +73,9 @@ mBitmap ENDS
   hCurEraser_8      dd ?
   hCurEraser_16     dd ?
 
-  ;主要为画布所使用的变量
+  ; 画布所使用的变量
+  ; 以下是实际像素
+  canvasMargin            equ 5
   ; 以下的大小均为逻辑像素，而非屏幕上实际显示的单个像素
   defaultCanvasWidth      equ 800
   defaultCanvasHeight     equ 600
@@ -142,14 +144,48 @@ CTEXT MACRO y:VARARG
   EXITM <OFFSET sym>
 ENDM
 
+; Windows 像素坐标的 offset 是
+; 是 Canvas 逻辑坐标的
+
 ; 将相对于 Canvas Windows Client Area 的像素坐标转换成为 Canvas 的逻辑坐标
-CoordWindowToCanvas proc coordWindows:POINT, coordCanvas: PTR POINT
-  ;TODO
+CoordWindowToCanvas proc coordWindow: PTR POINT
+  sub (POINT PTR [coordWindow]).x, canvasMargin
+  sub (POINT PTR [coordWindow]).y, canvasMargin
+  mov ebx, nowCanvasZoomLevel
+  ; x 坐标
+  mov eax, (POINT PTR [coordWindow]).x
+  mov edx, 0
+  div ebx
+  add eax, nowCanvasOffsetX
+  mov (POINT PTR [coordWindow]).x, eax
+  ; y 坐标
+  mov eax, (POINT PTR [coordWindow]).y
+  mov edx, 0
+  div ebx
+  add eax, nowCanvasOffsetY
+  mov (POINT PTR [coordWindow]).y, eax
+  ret 
 CoordWindowToCanvas endp
 
-; 将 Canvas 的逻辑坐标相对于 Canvas Windows Client Area 的像素坐标转换成为 
-CoordCanvasToWindow proc coordCanvas:POINT, coordWindow : PTR POINT
-  ;TODO
+; 将 Canvas 的逻辑坐标转换成为相对于 Canvas Windows Client Area 的像素坐标
+CoordCanvasToWindow proc coordCanvas: PTR POINT
+  ; 如果不在画布左上角的右下方会出问题
+  mov ebx, nowCanvasZoomLevel
+  ; x 坐标
+  mov eax, (POINT PTR [coordCanvas]).x
+  sub eax, nowCanvasOffsetX
+  mov edx, 0
+  mul ebx
+  add eax, canvasMargin
+  mov (POINT PTR [coordCanvas]).x, eax
+  ; y 坐标
+  mov eax, (POINT PTR [coordCanvas]).y
+  sub eax, nowCanvasOffsetY
+  mov edx, 0
+  mul ebx
+  add eax, canvasMargin
+  mov (POINT PTR [coordCanvas]).y, eax
+  ret   
 CoordCanvasToWindow endp
 
 Quit proc
@@ -229,7 +265,8 @@ HandleMouseLeave endp
 ; 将 drawDCBuf 按照合适的比例和偏移复制到 hCanvas 的 DC 上面
 RenderBitmap proc
   ; 计算范围
-  ; 将计算后的范围利用 StretchBlt 复制到 一个temp 的buffer上面
+
+  ; 将计算后的范围利用 StretchBlt 复制到 一个 temp 的buffer上面
   ; 将 tempbuffer 移动到 Buffer 上面
 RenderBitmap endp
 
@@ -317,7 +354,6 @@ UpdateCanvasPos proc uses ecx edx ebx
 
   invoke SetWindowPos,hCanvas,HWND_TOP,mWinRect.left,ebx,ecx,edx,SWP_SHOWWINDOW
 
-  ;invoke DrawTextonCanvas
   ret  
 UpdateCanvasPos endp
 

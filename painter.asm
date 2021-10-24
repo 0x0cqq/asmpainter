@@ -51,6 +51,7 @@ ProcWinCanvas PROTO :DWORD,:DWORD,:DWORD,:DWORD   ;画布窗口运行中的消息处理程序
 CreateCanvasWin PROTO
 UpdateCanvasPos PROTO
 printf PROTO C :PTR BYTE, :VARARG
+sprintf PROTO C :PTR BYTE, :PTR BYTE, :VARARG
 
 mBitmap STRUCT
   bitmap HBITMAP ?
@@ -73,6 +74,10 @@ mBitmap ENDS
   hCurEraser_8      dd ?
   hCurEraser_16     dd ?
 
+  CursorPosition	POINT <0,0>				;光标逻辑位置
+  CoordinateFormat	byte  "%d,%d",0			;显示坐标格式
+  TextBuffer		byte  24 DUP(0)			;输出缓冲
+  
   ; 画布所使用的变量
   ; 以下是实际像素
   canvasMargin            equ 5
@@ -194,6 +199,52 @@ Quit proc
   ret
 Quit endp
 
+; 获取鼠标逻辑坐标
+GetCursorPosition proc
+  local point:POINT
+  local rect:RECT
+  local ifout:dword		;是否超出画布域外
+  mov ifout, 0
+  invoke GetCursorPos, addr point
+  invoke GetClientRect, hCanvas, addr rect
+  mov ebx, point.x
+  
+  ; 判断超出区域，但其实没啥用
+  .if ebx > rect.right
+    mov ifout, 1
+  .elseif ebx < rect.left
+    mov ifout, 1
+  mov ebx, point.y
+  .elseif ebx < rect.top
+    mov ifout, 1
+  .elseif ebx > rect.bottom
+    mov ifout, 1
+  .endif
+  
+  ; 变换坐标
+  invoke ScreenToClient, hCanvas, addr point
+  invoke CoordWindowToCanvas, addr point
+  mov ebx, point.x
+  mov CursorPosition.x, ebx
+  mov ebx, point.y
+  mov CursorPosition.y, ebx
+  .if ifout == 1
+    mov CursorPosition.x, 0
+    mov CursorPosition.y, 0
+  .endif
+  ret
+GetCursorPosition endp
+
+; 显示鼠标的逻辑坐标
+ShowCursorPosition proc
+  pushad
+  invoke GetCursorPosition
+  popad
+  invoke sprintf, addr TextBuffer, offset CoordinateFormat, CursorPosition.x, CursorPosition.y ; 格式化输出到字符串
+  invoke SendMessage, hWinStatusBar, SB_SETTEXT, 0, addr TextBuffer ; 显示坐标
+  ret
+ShowCursorPosition endp
+
 ; 复制 HistoryBitmap 最后的一个到DrawBuf
 UpdateDrawBufFromHistoryBitmap proc
 
@@ -245,6 +296,9 @@ HandleLButtonUp endp
 
 ; 处理鼠标移动，也就是正在画图
 HandleMouseMove proc wParam:DWORD, lParam:DWORD
+  pushad
+  invoke ShowCursorPosition ; 显示当前坐标
+  popad
   ; 判断一下当前是什么移动（需要用一个全局变量维护一下状态栏里面的选取）
   ; 如果不是笔和橡皮这种连续的，就重新复制 HistoryBitmap 到 Buffer 中
   ; 获取当前的鼠标位置（窗口的逻辑坐标），需要利用坐标系变换转换到画布的逻辑坐标
@@ -257,6 +311,9 @@ HandleMouseMove endp
 
 ; 处理鼠标移动开画板，目前没想到没什么要做的？
 HandleMouseLeave proc wParam:DWORD, lParam:DWORD
+  mov TextBuffer, 0
+  invoke SendMessage, hWinStatusBar, SB_SETTEXT, 0, addr TextBuffer ; 消除坐标，但没法用？
+  
   xor eax,eax
   ret
 HandleMouseLeave endp
@@ -402,7 +459,8 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      mov hCurEraser_8,eax
      invoke LoadCursor,hInstance,IDC_ERASER16
      mov hCurEraser_16,eax
-
+	 
+	 invoke ShowCursorPosition
    .elseif eax == WM_SIZE
      ;使状态栏和工具栏随缩放而缩放
      invoke SendMessage,hWinStatusBar,uMsg,wParam,lParam
@@ -461,6 +519,11 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      .elseif eax ==ID_QUIT
          call Quit
      .endif  
+  .elseif eax == WM_MOUSEMOVE
+    call Quit
+    pushad
+	 invoke ShowCursorPosition
+	 popad
   .else
      invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数 
      ret

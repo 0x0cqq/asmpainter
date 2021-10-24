@@ -106,14 +106,6 @@ IDI_ICON1               ICON                    "Icon\\titleIcon.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
-// Bitmap
-//
-
-IDB_CONTROLS            BITMAP                  "Icon\\control.bmp"
-
-
-/////////////////////////////////////////////////////////////////////////////
-//
 // Cursor
 //
 
@@ -126,6 +118,14 @@ IDC_ERASER4             CURSOR                  "Icon\\eraser4.cur"
 IDC_ERASER8             CURSOR                  "Icon\\eraser8.cur"
 
 IDC_ERASER16            CURSOR                  "Icon\\eraser16.cur"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Bitmap
+//
+
+IDB_CONTROLS            BITMAP                  "Icon\\control.bmp"
 
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////

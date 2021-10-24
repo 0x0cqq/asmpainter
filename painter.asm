@@ -7,12 +7,16 @@ include user32.inc
 include kernel32.inc
 include comctl32.inc
 include gdi32.inc
+include comdlg32.inc
+include msvcrt.inc  ;for debug
 
 includelib user32.lib
 includelib msvcrt.lib
 includelib kernel32.lib
 includelib comctl32.lib
 includelib gdi32.lib
+includelib comdlg32.lib
+includelib msvcrt.lib ;for debug
 ;---------------EQU等值定义-----------------
 ID_NEW               EQU            40001
 ID_OPEN              EQU            40002
@@ -78,6 +82,10 @@ mBitmap ENDS
   CoordinateFormat	byte  "%d,%d",0			;显示坐标格式
   TextBuffer		byte  24 DUP(0)			;输出缓冲
   
+  foregroundColor       dd ?               ;前景色
+  backgroundColor       dd ?               ;背景色
+  customColorBuffer     dd 16 dup(?)       ;颜色缓冲区，用于自定义颜色
+
   ; 画布所使用的变量
   ; 以下是实际像素
   canvasMargin            equ 5
@@ -95,14 +103,15 @@ mBitmap ENDS
   ; baseDCBuf        HDC ? ; 某次绘制位图的基础画板
   drawDCBuf        HDC ?   ; 绘制了当前绘制的画板
 
-
   stToolBar  equ   this byte  ;定义工具栏按钮
     TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;新建
     TBBUTTON <1,ID_OPEN,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;打开
     TBBUTTON <2,ID_SAVE,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;保存 
     TBBUTTON <7,ID_UNDO,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;撤回
-    TBBUTTON <4,ID_PEN,TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>;画笔
-    TBBUTTON <5,ID_ERASER,TBSTATE_ENABLED, BTNS_AUTOSIZE or BTNS_CHECKGROUP, 0, 0, NULL>;橡皮
+    TBBUTTON <4,ID_PEN,TBSTATE_ENABLED, TBSTYLE_CHECKGROUP, 0, 0, NULL>;画笔
+    TBBUTTON <5,ID_ERASER,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP, 0, 0, NULL>;橡皮
+    TBBUTTON <10,ID_FOR_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;前景色
+    TBBUTTON <11,ID_BACK_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;背景色
   ControlButtonNum=($-stToolBar)/sizeof TBBUTTON
 
 .const
@@ -112,7 +121,11 @@ mBitmap ENDS
   szStatusBarClassName         db "msctls_statusbar32",0       
   szCanvasClassName            db "画布", 0
   lptbab                       TBADDBITMAP  <NULL,?>
-
+;--------for debug---------
+  szMouseMoveCanvas   db  "MouseMove in Canvas",0dh,0ah,0
+  szLButtonDown       db  "LButtonDown in Canvas",0dh,0ah,0
+  szLButtonUp         db  "LButtonUp in Canvas",0dh,0ah,0
+;--------for debug---------
   debugUINT  db "%u", 0Ah, 0Dh, 0
 .code
 
@@ -325,6 +338,7 @@ RenderBitmap proc
 
   ; 将计算后的范围利用 StretchBlt 复制到 一个 temp 的buffer上面
   ; 将 tempbuffer 移动到 Buffer 上面
+  ret
 RenderBitmap endp
 
 ; 画布的 proc
@@ -333,11 +347,14 @@ ProcWinCanvas proc hWnd, uMsg, wParam, lParam
     m2m hCanvas, hWnd
     invoke HandleCanvasCreate
   .elseif uMsg == WM_LBUTTONDOWN
-    invoke HandleLButtonDown, wParam, lParam 
+    invoke HandleLButtonDown, wParam, lParam
+;    invoke crt_printf,addr szLButtonDown
   .elseif uMsg == WM_LBUTTONUP
     invoke HandleLButtonUp, wParam, lParam
+;    invoke crt_printf,addr szLButtonUp
   .elseif uMsg == WM_MOUSEMOVE
     invoke HandleMouseMove, wParam, lParam
+;    invoke crt_printf,addr szMouseMoveCanvas
   .elseif uMsg == WM_MOUSELEAVE
     invoke HandleMouseLeave, wParam, lParam
   .elseif uMsg == WM_MOUSEWHEEL
@@ -346,8 +363,8 @@ ProcWinCanvas proc hWnd, uMsg, wParam, lParam
     ret
   .elseif uMsg == WM_SIZE
     invoke UpdateCanvasPos
-  .elseif uMsg == WM_PAINT
-    invoke RenderBitmap
+;  .elseif uMsg == WM_PAINT
+;    invoke RenderBitmap
   .else 
     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
     ret ; 这个地方必须要 ret ，因为要返回 DefWindowProc 的返回值
@@ -414,6 +431,89 @@ UpdateCanvasPos proc uses ecx edx ebx
   ret  
 UpdateCanvasPos endp
 
+SetColorInTool proc index:DWORD, color:DWORD
+    ;TODO:该函数根据index(前/背景色)和color颜色
+    ;     绘制工具栏上的按钮位图
+    LOCAL @rect:RECT
+    LOCAL @hdcW:HDC
+    LOCAL @hdc:HDC
+    LOCAL @hbmp:HBITMAP
+    LOCAL @hbmpM:HBITMAP
+    LOCAL @hbrush:HBRUSH
+    LOCAL @hgraybrush:HBRUSH
+ 
+    mov @rect.left,0
+    mov @rect.right,32
+    mov @rect.top,0
+    mov @rect.bottom,32
+    
+    mov ebx,color
+    .if index==0
+       mov foregroundColor,ebx
+    .else
+       mov backgroundColor,ebx
+    .endif
+
+    invoke GetDC,hWinMain
+    mov @hdcW,eax
+    invoke CreateCompatibleDC,@hdcW
+    mov @hdc,eax
+
+    invoke CreateCompatibleBitmap,@hdcW,32,32
+    mov @hbmp,eax
+    invoke SelectObject,@hdc,@hbmp
+    invoke CreateSolidBrush,color
+    mov @hbrush,eax
+    invoke FillRect,@hdc,addr @rect, @hbrush
+    invoke DeleteObject,@hbrush
+    invoke GetStockObject,GRAY_BRUSH
+    mov @hgraybrush,eax
+    invoke FrameRect,@hdc,addr @rect, @hgraybrush
+
+    invoke CreateCompatibleBitmap,@hdcW,32,32
+    mov @hbmpM,eax
+    invoke SelectObject,@hdc,@hbmpM
+    invoke GetStockObject,BLACK_BRUSH
+    mov @hbrush,eax
+    invoke FillRect,@hdc,addr @rect,@hbrush
+   
+    mov eax,index
+    add eax,10
+    mov index,eax
+
+    invoke ImageList_Replace,hImageListControl,index,@hbmp,@hbmpM
+    
+    invoke DeleteDC,@hdc
+    invoke DeleteObject,@hbmp
+    invoke DeleteObject,@hbmpM
+    invoke DeleteDC,@hdcW
+
+    invoke InvalidateRect, hWinToolBar, NULL, FALSE
+    ret
+SetColorInTool endp
+
+SetColor proc, index:DWORD
+  ;TODO:该函数根据index设置前景色，背景色
+  ;index=0,设置前景色
+  ;index=1,设置背景色
+  local @stcc:CHOOSECOLOR
+
+  invoke RtlZeroMemory,addr @stcc,sizeof @stcc;用0填充stcc内存区域
+  mov @stcc.lStructSize,sizeof @stcc
+  push hWinMain
+  pop @stcc.hwndOwner
+  .if index==0
+     mov eax,foregroundColor
+  .elseif index==1
+     mov eax,backgroundColor
+  .endif
+  mov @stcc.rgbResult,eax
+  mov @stcc.Flags,CC_RGBINIT
+  mov @stcc.lpCustColors,offset customColorBuffer
+  invoke ChooseColor,addr @stcc
+  invoke SetColorInTool,index,@stcc.rgbResult
+  ret
+SetColor endp
 
 ;主窗口 的 proc 
 ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
@@ -440,9 +540,9 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      invoke LoadBitmap,hInstance,IDB_CONTROLS
      mov @hBmp,eax
      invoke ImageList_AddMasked, hImageListControl,@hBmp, 0ffh
-  ;-----------------创建画布窗口-------------------
-     invoke CreateCanvasWin
-   invoke DeleteObject,@hBmp
+     invoke DeleteObject,@hBmp
+     invoke SetColorInTool,0,0
+     invoke SetColorInTool,1,0ffffffh
      invoke SendMessage, hWinToolBar, TB_SETIMAGELIST, 0, hImageListControl
      invoke SendMessage, hWinToolBar, TB_LOADIMAGES, IDB_STD_LARGE_COLOR, HINST_COMMCTRL
      invoke SendMessage, hWinToolBar, TB_BUTTONSTRUCTSIZE, sizeof TBBUTTON, 0
@@ -459,6 +559,8 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      mov hCurEraser_8,eax
      invoke LoadCursor,hInstance,IDC_ERASER16
      mov hCurEraser_16,eax
+  ;-----------------创建画布窗口-------------------
+     invoke CreateCanvasWin
 	 
 	 invoke ShowCursorPosition
    .elseif eax == WM_SIZE
@@ -478,23 +580,23 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
         pop ebx
         mov eax,ebx
         .if eax == ID_PEN
-            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurPen
+            invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurPen
          .elseif eax == ID_ERASER
             invoke GetMenuState,hMenu,ID_ERA_TWO_PIXEL,MF_BYCOMMAND
             .if eax & MF_CHECKED
-               invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_2
+               invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_2
             .endif
              invoke GetMenuState,hMenu,ID_ERA_FOUR_PIXEL,MF_BYCOMMAND
             .if eax & MF_CHECKED
-               invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_4
+               invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_4
             .endif
              invoke GetMenuState,hMenu,ID_ERA_EIGHT_PIXEL,MF_BYCOMMAND
             .if eax & MF_CHECKED
-               invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_8
+               invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_8
             .endif
              invoke GetMenuState,hMenu,ID_ERA_SIXTEEN_PIXEL,MF_BYCOMMAND
             .if eax & MF_CHECKED
-               invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_16
+               invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_16
             .endif
          .endif
      ;菜单栏改变笔/橡皮的像素大小，进行选中
@@ -507,15 +609,19 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
          pop ebx
          mov eax,ebx
          .if eax==ID_ERA_TWO_PIXEL
-            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_2
+            invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_2
          .elseif eax==ID_ERA_FOUR_PIXEL
-            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_4
+            invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_4
          .elseif eax==ID_ERA_EIGHT_PIXEL
-            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_8
+            invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_8
          .elseif eax==ID_ERA_SIXTEEN_PIXEL
-            invoke SetClassLong,hWnd,GCL_HCURSOR,hCurEraser_16
+            invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_16
          .endif
      ;菜单栏退出功能
+     .elseif eax == ID_FOR_COLOR
+         invoke SetColor,0
+     .elseif eax == ID_BACK_COLOR
+         invoke SetColor,1
      .elseif eax ==ID_QUIT
          call Quit
      .endif  

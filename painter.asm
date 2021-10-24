@@ -63,7 +63,6 @@ mBitmap STRUCT
   nHeight DWORD ?
 mBitmap ENDS
 
-
 .data
   hInstance         dd ?                   ;本模块的句柄
   hWinMain          dd ?                   ;窗口句柄
@@ -97,12 +96,14 @@ mBitmap ENDS
   nowCanvasOffsetX        dd ?
   nowCanvasOffsetY        dd ?
   nowCanvasZoomLevel      dd 1 ; 一个逻辑像素在屏幕上占据几个实际像素的宽度
-
-  historyNums       equ 50                             ;存储 50 条历史记录
-  historyBitmap     mBitmap historyNums DUP(<>)  ;历史记录的位图
-  ; baseDCBuf        HDC ? ; 某次绘制位图的基础画板
-  drawDCBuf        HDC ?   ; 绘制了当前绘制的画板
-
+  
+  historyNums          equ 50                             ;存储 50 条历史记录
+  historyBitmap        mBitmap historyNums DUP(<>)  ;历史记录的位图
+  historyBitmapIndex   dd  0       ;当前历史记录位图中即将拷贝进缓存区的位图索引
+  ; baseDCBuf          HDC ?       ; 某次绘制位图的基础画板
+  drawDCBuf            HDC ?       ; 绘制了当前绘制的画板
+  undoMaxLimit         dd  0       ; 
+  
   stToolBar  equ   this byte  ;定义工具栏按钮
     TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;新建
     TBBUTTON <1,ID_OPEN,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;打开
@@ -258,14 +259,82 @@ ShowCursorPosition proc
   ret
 ShowCursorPosition endp
 
-; 复制 HistoryBitmap 最后的一个到DrawBuf
+; 复制 HistoryBitmap 最后的一个到DrawDCBuf
 UpdateDrawBufFromHistoryBitmap proc
+; 构造辅助的hTempDC
+; 先将historyBitmap的最后一个绑定到临时HDC，
+; 再把临时HDC复制给新HDC
+  LOCAL @hTempDC:HDC
+  LOCAL @hWinDC:HDC
+  LOCAL @hTempBitmap:HBITMAP
+  LOCAL @nWidth: DWORD
+  LOCAL @nHeight: DWORD
+  pushad
 
+  invoke GetDC,hWinMain
+  mov @hWinDC,eax
+  invoke CreateCompatibleDC,@hWinDC
+  mov @hTempDC,eax
+  mov esi,historyBitmapIndex ;最后一个位图
+  m2m @hTempBitmap,[historyBitmap+esi].bitmap
+  m2m @nWidth,[historyBitmap+esi].nWidth
+  m2m @nHeight,[historyBitmap+esi].nHeight
+  invoke ReleaseDC, hWinMain,@hWinDC 
+  invoke SelectObject,@hTempDC,@hTempBitmap
+  invoke BitBlt,drawDCBuf,0,0,@nWidth,@nHeight,@hTempDC,0,0,SRCCOPY
+  invoke DeleteDC,@hTempDC
+
+  popad
+  ret
 UpdateDrawBufFromHistoryBitmap endp
+
+;将当前drawDCBuf转换为Bitmap并存在HistoryBitmap中
+UpdateHistoryBitmapFromDrawBuffer proc, nWidth:DWORD,nHeight:DWORD
+;输入参数为当前drawDCBuf的宽度和高度
+;实现过程：
+;       先将historyBitmapIndex+1作为新位图的索引
+;       将原来该位置句柄对应的位图释放（因此初始化时一定要将创建50个空位图对应到historyBitmap?）
+;       再将drawDCBuf复制到创建的新DC上，然后保存位图句柄到historyBitmap
+;注：此函数中没有判断是否增加撤销上限，调用该函数时需要在后面补充
+  LOCAL @hTempDC:HDC
+  LOCAL @hWinDC:HDC
+  LOCAL @hTempBitmap:HBITMAP
+  LOCAL @nWidth: DWORD
+  LOCAL @nHeight: DWORD
+  pushad
+
+  mov eax,historyBitmapIndex
+  inc eax
+  mov historyBitmapIndex,eax
+  mov esi,historyBitmapIndex 
+  invoke DeleteObject,[historyBitmap+esi].bitmap
+
+  invoke GetDC,hWinMain
+  mov @hWinDC,eax
+  invoke CreateCompatibleDC, @hWinDC
+  mov @hTempDC, eax
+  invoke CreateCompatibleBitmap, @hWinDC, nWidth, nHeight
+  mov @hTempBitmap, eax
+  invoke ReleaseDC, hWinMain,@hWinDC 
+  invoke SelectObject,@hTempDC, @hTempBitmap
+  invoke BitBlt, @hTempDC, 0, 0, nWidth, nHeight, drawDCBuf, 0, 0, SRCCOPY
+  invoke DeleteDC,@hTempDC
+
+  mov esi,historyBitmapIndex 
+  m2m [historyBitmap+esi].bitmap,@hTempBitmap
+  m2m [historyBitmap+esi].nWidth,nWidth
+  m2m [historyBitmap+esi].nHeight,nHeight
+
+  popad
+  ret
+UpdateHistoryBitmapFromDrawBuffer endp
 
 ; 重置整个历史，并且把参数的 bitmap 放到第一个位置上
 InitHistory proc bitmap: HBITMAP
-
+  m2m [historyBitmap].bitmap,bitmap
+  mov historyBitmapIndex,0
+  mov undoMaxLimit,0
+  ret
 InitHistory endp
 
 ; 处理画布创建

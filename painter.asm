@@ -79,13 +79,13 @@ mBitmap ENDS
   hCurEraser_8      dd ?
   hCurEraser_16     dd ?
 
-  CursorPosition	POINT <0,0>				;光标逻辑位置
+  CursorPosition	POINT <0,0>			    	;光标逻辑位置
   CoordinateFormat	byte  "%d,%d",0			;显示坐标格式
-  TextBuffer		byte  24 DUP(0)			;输出缓冲
+  TextBuffer		byte  24 DUP(0)	     		;输出缓冲
   
-  foregroundColor       dd ?               ;前景色
-  backgroundColor       dd ?               ;背景色
-  customColorBuffer     dd 16 dup(?)       ;颜色缓冲区，用于自定义颜色
+  foregroundColor       dd 0                    ;前景色
+  backgroundColor       dd 0ffffffh             ;背景色
+  customColorBuffer     dd 16 dup(?)            ;颜色缓冲区，用于自定义颜色
 
   ; 画布所使用的变量
   ; 以下是实际像素
@@ -95,8 +95,8 @@ mBitmap ENDS
   defaultCanvasHeight     equ 600
   nowCanvasWidth          dd ?
   nowCanvasHeight         dd ? 
-  nowCanvasOffsetX        dd ?
-  nowCanvasOffsetY        dd ?
+  nowCanvasOffsetX        dd 0
+  nowCanvasOffsetY        dd 0
   nowCanvasZoomLevel      dd 1 ; 一个逻辑像素在屏幕上占据几个实际像素的宽度
   hBackgroundBrush       HBRUSH ?
   
@@ -177,14 +177,11 @@ endm
 ; Windows 像素坐标的 offset 是
 ; 是 Canvas 逻辑坐标的
 
-; UNTESTED
 ; 将相对于 Canvas Windows Client Area 的像素坐标转换成为 Canvas 的逻辑坐标
 CoordWindowToCanvas proc coordWindow: PTR POINT
   ; invoke crt_printf, CTEXT("before transformation: ")
   mov esi, coordWindow
-  ;pushad
-  ;invoke crt_printf, addr debugUINT2, (POINT PTR [esi]).x, (POINT PTR [esi]).y
-  ;popad
+
   sub (POINT PTR [esi]).x, canvasMargin
   sub (POINT PTR [esi]).y, canvasMargin
   mov ebx, nowCanvasZoomLevel
@@ -200,13 +197,9 @@ CoordWindowToCanvas proc coordWindow: PTR POINT
   div ebx
   add eax, nowCanvasOffsetY
   mov (POINT PTR [esi]).y, eax
-  ; pushad
-  ; invoke crt_printf, addr debugUINT2, (POINT PTR [esi]).x, (POINT PTR [esi]).y
-  ; popad 
   ret 
 CoordWindowToCanvas endp
 
-; UNTESTED
 ; 将 Canvas 的逻辑坐标转换成为相对于 Canvas Windows Client Area 的像素坐标
 CoordCanvasToWindow proc coordCanvas: PTR POINT
   ; 如果不在画布左上角的右下方会出问题
@@ -281,30 +274,50 @@ ShowCursorPosition proc
   ret
 ShowCursorPosition endp
 
-; 复制 HistoryBitmap 最后的一个到DrawDCBuf
+; 复制 HistoryBitmap 最后的一个到DrawDCBuf，同时要更新画布的宽和高
 UpdateDrawBufFromHistoryBitmap proc
 ; 构造辅助的hTempDC
 ; 先将historyBitmap的最后一个绑定到临时HDC，
 ; 再把临时HDC复制给新HDC
   LOCAL @hTempDC:HDC
-  LOCAL @hWinDC:HDC
+  LOCAL @hCanvasDC:HDC
   LOCAL @hTempBitmap:HBITMAP
   LOCAL @nWidth: DWORD
   LOCAL @nHeight: DWORD
+  local @newDrawBufBitmap: HBITMAP
   pushad
+  ; 从 history 中取来最后一个
+  mov eax, historyBitmapIndex
+  mov edx, 0
+  mov ebx, SIZEOF mBitmap ; 这个结构体的字节数
+  mul ebx
+  mov esi, eax
+  lea ebx, historyBitmap
+  add esi, ebx
+  m2m @hTempBitmap,(mBitmap PTR [esi]).bitmap
+  m2m @nWidth,(mBitmap PTR [esi]).nWidth
+  m2m @nHeight,(mBitmap PTR [esi]).nHeight
+  invoke crt_printf, CTEXT("history map", 0Ah,0Dh)
+  invoke crt_printf, addr debugUINT2, @nWidth, @nHeight
 
-  invoke GetDC,hWinMain
-  mov @hWinDC,eax
-  invoke CreateCompatibleDC,@hWinDC
+  invoke GetDC,hCanvas
+  mov @hCanvasDC,eax
+  invoke CreateCompatibleDC,@hCanvasDC
   mov @hTempDC,eax
-  mov esi,historyBitmapIndex ;最后一个位图
-  m2m @hTempBitmap,[historyBitmap+esi].bitmap
-  m2m @nWidth,[historyBitmap+esi].nWidth
-  m2m @nHeight,[historyBitmap+esi].nHeight
-  invoke ReleaseDC, hWinMain,@hWinDC 
   invoke SelectObject,@hTempDC,@hTempBitmap
+
+  ; 新建一个画布
+  invoke CreateCompatibleBitmap, @hCanvasDC, @nWidth, @nHeight
+  mov @newDrawBufBitmap, eax ; 不删，留给三行后删
+  invoke SelectObject, drawDCBuf, @newDrawBufBitmap
+  invoke DeleteObject, eax ;删掉老的 Bitmap
+  
+  invoke ReleaseDC, hCanvas,@hCanvasDC 
   invoke BitBlt,drawDCBuf,0,0,@nWidth,@nHeight,@hTempDC,0,0,SRCCOPY
   invoke DeleteDC,@hTempDC
+
+  m2m nowCanvasWidth, @nWidth
+  m2m nowCanvasHeight, @nHeight
 
   popad
   ret
@@ -319,7 +332,7 @@ UpdateHistoryBitmapFromDrawBuffer proc, nWidth:DWORD,nHeight:DWORD
 ;       再将drawDCBuf复制到创建的新DC上，然后保存位图句柄到historyBitmap
 ;注：此函数中没有判断是否增加撤销上限，调用该函数时需要在后面补充
   LOCAL @hTempDC:HDC
-  LOCAL @hWinDC:HDC
+  LOCAL @hCanvasDC:HDC
   LOCAL @hTempBitmap:HBITMAP
   LOCAL @nWidth: DWORD
   LOCAL @nHeight: DWORD
@@ -328,32 +341,43 @@ UpdateHistoryBitmapFromDrawBuffer proc, nWidth:DWORD,nHeight:DWORD
   mov eax,historyBitmapIndex
   inc eax
   mov historyBitmapIndex,eax
-  mov esi,historyBitmapIndex 
-  invoke DeleteObject,[historyBitmap+esi].bitmap
+  mov edx, 0
+  mov ebx, SIZEOF mBitmap ; 这个结构体的字节数
+  mul ebx
+  mov esi, eax
+  lea ebx, historyBitmap
+  add esi, ebx
 
-  invoke GetDC,hWinMain
-  mov @hWinDC,eax
-  invoke CreateCompatibleDC, @hWinDC
+  invoke DeleteObject, (mBitmap PTR [esi]).bitmap
+
+  invoke GetDC,hCanvas
+  mov @hCanvasDC,eax
+  invoke CreateCompatibleDC, @hCanvasDC
   mov @hTempDC, eax
-  invoke CreateCompatibleBitmap, @hWinDC, nWidth, nHeight
+  invoke CreateCompatibleBitmap, @hCanvasDC, nWidth, nHeight
   mov @hTempBitmap, eax
-  invoke ReleaseDC, hWinMain,@hWinDC 
+  invoke ReleaseDC, hCanvas,@hCanvasDC 
   invoke SelectObject,@hTempDC, @hTempBitmap
   invoke BitBlt, @hTempDC, 0, 0, nWidth, nHeight, drawDCBuf, 0, 0, SRCCOPY
   invoke DeleteDC,@hTempDC
 
-  mov esi,historyBitmapIndex 
-  m2m [historyBitmap+esi].bitmap,@hTempBitmap
-  m2m [historyBitmap+esi].nWidth,nWidth
-  m2m [historyBitmap+esi].nHeight,nHeight
+
+  m2m (mBitmap PTR [esi]).bitmap,@hTempBitmap
+  m2m (mBitmap PTR [esi]).nWidth,nWidth
+  m2m (mBitmap PTR [esi]).nHeight,nHeight
 
   popad
   ret
 UpdateHistoryBitmapFromDrawBuffer endp
 
 ; 重置整个历史，并且把参数的 bitmap 放到第一个位置上
-InitHistory proc bitmap: HBITMAP
-  m2m [historyBitmap].bitmap,bitmap
+InitHistory proc bitmap: HBITMAP, nWidth: DWORD, nHeight:DWORD
+
+  lea esi, historyBitmap
+  m2m (mBitmap PTR [esi]).bitmap ,bitmap
+  m2m (mBitmap PTR [esi]).nWidth ,nWidth
+  m2m (mBitmap PTR [esi]).nHeight,nHeight
+
   mov historyBitmapIndex,0
   mov undoMaxLimit,0
   ret
@@ -362,11 +386,42 @@ InitHistory endp
 ; 处理画布创建
 ; 理论上最开始的时候调用一次
 HandleCanvasCreate proc
-  ; invoke UpdateCanvasPos ; 更新位置
-  ;在 HistoryBitmap 中插入一个“空白Bitmap” InitHistory
-  ; UpdateDrawBufFromHistoryBitmap
-  ; invalidaterect 掉整个矩形，或者想办法发一个 WM_PAINT
-  ; 反正需要调用 RenderBitmap函数，但最好别直接调用
+  local hCanvasDC : HDC
+  local hTempDC   : HDC
+  local initBitmap: HBITMAP
+  local hTempBrush: HBRUSH
+  local tempRect  : RECT
+  
+  invoke UpdateCanvasPos ; 更新位置
+
+  ; 新建一个默认的画布
+  invoke GetDC, hCanvas
+  mov hCanvasDC, eax
+  invoke CreateCompatibleDC, hCanvasDC
+  mov drawDCBuf, eax
+  invoke CreateCompatibleBitmap, hCanvasDC, defaultCanvasWidth, defaultCanvasHeight  
+  mov initBitmap, eax ;不能删这个，交给 historyBitmap 数组去管理
+  invoke CreateCompatibleDC, hCanvasDC
+  mov hTempDC, eax
+  invoke ReleaseDC, hCanvas, hCanvasDC
+
+  ; 涂上全部背景色
+  invoke SelectObject, hTempDC, initBitmap
+  invoke CreateSolidBrush, backgroundColor
+  mov hTempBrush, eax
+  mov tempRect.top, 0
+  mov tempRect.left, 0
+  mov tempRect.right, defaultCanvasWidth
+  mov tempRect.bottom, defaultCanvasHeight
+  invoke FillRect, hTempDC, addr tempRect, hTempBrush
+  ; 初始化到 historyBitmap 里面
+  invoke InitHistory, initBitmap, defaultCanvasWidth, defaultCanvasHeight  
+  invoke DeleteObject, hTempBrush
+  invoke DeleteDC, hTempDC
+  
+  invoke UpdateDrawBufFromHistoryBitmap       ; 将 historyBitmap 牵引到 DrawBuf 里面去
+  invoke InvalidateRect, hCanvas, NULL, FALSE ; invalidaterect 掉整个画布，让 WM_PAINT 去更新
+  ret
 HandleCanvasCreate endp
 
 ; 从文件加载
@@ -439,6 +494,7 @@ RenderBitmap proc
   local wRBP : POINT ; (window RIght Bottom Point)
   local hCanvasDC : HDC
   local hTempDC : HDC
+  local hTempBrush : HBRUSH
   local hTempBitmap : HBITMAP
   local paintStruct : PAINTSTRUCT ; 似乎不太需要
   
@@ -446,21 +502,18 @@ RenderBitmap proc
   mov hCanvasDC, eax
   invoke CreateCompatibleDC, hCanvasDC ; 和创建 Buffer
   mov hTempDC, eax
-  invoke ReleaseDC, hCanvas, hCanvasDC
 
-  
-  invoke GetClientRect, hCanvas, addr tarRect ; 获取显示范围(是否包括滚动条？）
-  invoke CreateCompatibleBitmap, hTempDC, tarRect.right, tarRect.bottom ;创建 画布大小的 Bitmap
+  invoke GetClientRect, hCanvas, addr tarRect ; 获取显示范围
+  invoke CreateCompatibleBitmap, hCanvasDC, tarRect.right, tarRect.bottom ;创建 画布大小的 Bitmap 一定要是 hCanvasDC
   mov hTempBitmap, eax
   invoke SelectObject, hTempDC, hTempBitmap
-  invoke FillRect, hTempDC, addr tarRect, hBackgroundBrush
+  invoke FillRect, hTempDC, addr tarRect, hBackgroundBrush ;这个是窗口的背景
+  invoke DeleteObject, hTempBrush
+  invoke ReleaseDC, hCanvas, hCanvasDC
+
   ; 伸缩，拷贝到画布上面
-  invoke crt_printf, CTEXT("tarRect: ")
-  invoke crt_printf, addr debugUINT2, tarRect.right, tarRect.bottom
-  mov eax, tarRect.right
-  mov cRBP.x, eax
-  mov eax, tarRect.bottom
-  mov cRBP.y, eax
+  m2m cRBP.x, tarRect.right
+  m2m cRBP.y, tarRect.bottom
   invoke CoordWindowToCanvas, addr cRBP ; 获得绘制范围的逻辑坐标
   ; 绘制范围不能超过画布本身的大小
   mov eax, cRBP.x
@@ -484,39 +537,22 @@ RenderBitmap proc
   sub ecx, nowCanvasOffsetX 
   sub edx, nowCanvasOffsetY ; 刨除边缘变成宽高
 
-  pushad
-  invoke crt_printf, CTEXT("coordinates:",0Ah,0Dh)
-  popad
-
-  pushad
-  invoke crt_printf, addr debugUINT4, canvasMargin, canvasMargin, wRBP.x, wRBP.y
-  popad  
-
-  pushad
-  invoke crt_printf, addr debugUINT4, nowCanvasOffsetX, nowCanvasOffsetY,    ecx,    edx
-  popad
-
+  ; 按照缩放比例伸缩
   invoke StretchBlt,  hTempDC,     canvasMargin,     canvasMargin, wRBP.x, wRBP.y,\
                     drawDCBuf, nowCanvasOffsetX, nowCanvasOffsetY,    ecx,    edx,\
                      SRCCOPY
-
-  invoke crt_printf, addr debugUINT4, 0, 0, tarRect.right, tarRect.bottom
-
+  ; 拷贝
   invoke BeginPaint, hCanvas, addr paintStruct
+  mov hCanvasDC, eax
   invoke BitBlt, hCanvasDC, 0, 0, tarRect.right, tarRect.bottom,\
                  hTempDC, 0, 0, \
                  SRCCOPY 
-
-
   invoke EndPaint, hCanvas, addr paintStruct
   ; 释放 / 删除创建的 DC 和 hDC 
   invoke DeleteDC, hTempDC
   invoke DeleteObject, hTempBitmap
   xor eax,eax
   ret 
-  ; 将计算后的范围利用 StretchBlt 复制到 一个 temp 的buffer上面
-  ; 将 tempbuffer 移动到 Buffer 上面
-  ret
 RenderBitmap endp
 
 ; 画布的 proc
@@ -525,6 +561,7 @@ ProcWinCanvas proc hWnd, uMsg, wParam, lParam
   ; ret
   mov eax, uMsg
   .if eax == WM_CREATE
+    invoke crt_printf, CTEXT("create.")
     m2m hCanvas, hWnd
     invoke HandleCanvasCreate
   .elseif eax == WM_LBUTTONDOWN
@@ -543,8 +580,9 @@ ProcWinCanvas proc hWnd, uMsg, wParam, lParam
   .elseif eax == WM_SIZE
     invoke UpdateCanvasPos
   .elseif eax == WM_PAINT
-    invoke crt_printf, CTEXT("test_paint", 0Ah, 0Dh) 
     invoke RenderBitmap
+  .elseif eax == WM_ERASEBKGND
+    
   .else 
     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
     ret ; 这个地方必须要 ret ，因为要返回 DefWindowProc 的返回值
@@ -606,7 +644,8 @@ UpdateCanvasPos proc uses ecx edx ebx
   mov ebx, ToolBarRect.bottom
   sub ebx, ToolBarRect.top
 
-  invoke SetWindowPos,hCanvas,HWND_TOP,mWinRect.left,ebx,ecx,edx,SWP_SHOWWINDOW
+  invoke SetWindowPos,hCanvas,HWND_TOP,mWinRect.left,ebx,ecx,edx,SWP_NOREDRAW
+  invoke InvalidateRect, hCanvas, NULL, FALSE ; invalidaterect 掉整个画布，让 WM_PAINT 去更新
 
   ret  
 UpdateCanvasPos endp
@@ -721,8 +760,8 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      mov @hBmp,eax
      invoke ImageList_AddMasked, hImageListControl,@hBmp, 0ffh
      invoke DeleteObject,@hBmp
-     invoke SetColorInTool,0,0
-     invoke SetColorInTool,1,0ffffffh
+     invoke SetColorInTool,0,foregroundColor        ; 黑色
+     invoke SetColorInTool,1,backgroundColor        ; 白色
      invoke SendMessage, hWinToolBar, TB_SETIMAGELIST, 0, hImageListControl
      invoke SendMessage, hWinToolBar, TB_LOADIMAGES, IDB_STD_LARGE_COLOR, HINST_COMMCTRL
      invoke SendMessage, hWinToolBar, TB_BUTTONSTRUCTSIZE, sizeof TBBUTTON, 0
@@ -748,12 +787,13 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      invoke SendMessage,hWinStatusBar,uMsg,wParam,lParam
      invoke SendMessage,hWinToolBar,uMsg,wParam,lParam
      ;调整画布的位置
-     invoke SendMessage,hCanvas,uMsg,wParam,lParam
+     invoke UpdateCanvasPos
+     ;invoke SendMessage,hCanvas,uMsg,wParam,lParam
   .elseif eax == WM_COMMAND
      mov eax,wParam
      movzx eax,ax
      ;菜单栏/工具栏点击铅笔/橡皮按钮，进行选中并改变光标
-     .if eax>=ID_PEN && eax<= ID_ERASER
+     .if eax >= ID_PEN && eax <= ID_ERASER
         mov ebx,eax
         push ebx
         invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_ERASER,eax,MF_BYCOMMAND

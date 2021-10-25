@@ -93,6 +93,9 @@ mBitmap ENDS
   ; 以下的大小均为逻辑像素，而非屏幕上实际显示的单个像素
   defaultCanvasWidth      equ 800
   defaultCanvasHeight     equ 600
+  maxCanvasZoomLevel      equ 10
+  canvasOffsetStep        equ 10
+
   nowCanvasWidth          dd ?
   nowCanvasHeight         dd ? 
   nowCanvasOffsetX        dd 0
@@ -174,6 +177,21 @@ get_invoke macro dst , name, args: VARARG
   mov dst, eax
 endm
 
+modifyWithBound proc var: PTR SDWORD , delta: SDWORD, lowBound : SDWORD , highBound :SDWORD 
+  mov esi, [var]
+  invoke crt_printf, CTEXT("%u",0Ah,0Dh), esi
+  mov eax, [esi]
+  add eax, delta
+  mov [esi], eax
+  .if eax < lowBound
+    m2m [esi], lowBound
+  .endif
+  .if eax > highBound
+    m2m [esi], highBound
+  .endif 
+  ret 
+modifyWithBound endp
+
 ; Windows 像素坐标的 offset 是
 ; 是 Canvas 逻辑坐标的
 
@@ -233,25 +251,28 @@ GetCursorPosition proc
   local point:POINT
   local rect:RECT
   local ifout:dword		;是否超出画布域外
-  mov ifout, 0
   invoke GetCursorPos, addr point
   invoke GetClientRect, hCanvas, addr rect
-  mov ebx, point.x
   
-  ; 判断超出区域，但其实没啥用
+  ; 变换坐标
+  invoke ScreenToClient, hCanvas, addr point
+  
+  ; 判断超出区域
+  ; 这里的 rect 是相对与 Client 的，需要先变换坐标
+
+  mov ifout, 0
+  mov ebx, point.x
   .if ebx > rect.right
     mov ifout, 1
   .elseif ebx < rect.left
     mov ifout, 1
+  .endif
   mov ebx, point.y
-  .elseif ebx < rect.top
+  .if ebx < rect.top
     mov ifout, 1
   .elseif ebx > rect.bottom
     mov ifout, 1
   .endif
-  
-  ; 变换坐标
-  invoke ScreenToClient, hCanvas, addr point
   invoke CoordWindowToCanvas, addr point
   mov ebx, point.x
   mov CursorPosition.x, ebx
@@ -481,6 +502,34 @@ HandleMouseLeave endp
 ; 按下 Ctrl 时候，对应缩放操作
 ; 没有 Ctrl 的时候，对应上下移动操作
 HandleMouseWheel proc wParam:DWORD, lParam:DWORD
+  local dist: SDWORD
+
+  mov ax, SWORD PTR [wParam+2] ; 取出来高字节
+  movsx eax, ax
+  cdq
+  mov ecx, 120
+  idiv ecx
+  mov dist, eax
+  invoke crt_printf, CTEXT("key state:%d",0Ah,0Dh), dist
+
+
+  .if wParam & 08h
+    ; control 键按下了：缩放
+    invoke modifyWithBound, addr nowCanvasZoomLevel, dist, 1, maxCanvasZoomLevel
+    
+  .else
+    mov eax, dist
+    mov ecx, canvasOffsetStep
+    imul ecx
+    cdq
+    mov ecx, nowCanvasZoomLevel
+    idiv ecx
+    mov dist, eax
+    ; control 键没有按下：移动
+    invoke modifyWithBound, addr nowCanvasOffsetY, dist, 0, nowCanvasHeight
+  .endif
+
+  invoke InvalidateRect, hCanvas, NULL, FALSE ; invalidaterect 掉整个画布，让 WM_PAINT 去更新
   xor eax, eax
   ret
 HandleMouseWheel endp
@@ -548,6 +597,7 @@ RenderBitmap proc
                  hTempDC, 0, 0, \
                  SRCCOPY 
   invoke EndPaint, hCanvas, addr paintStruct
+  invoke ShowCursorPosition ;更新鼠标坐标
   ; 释放 / 删除创建的 DC 和 hDC 
   invoke DeleteDC, hTempDC
   invoke DeleteObject, hTempBitmap
@@ -848,8 +898,8 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   .elseif eax == WM_MOUSEMOVE
     call Quit
     pushad
-	 invoke ShowCursorPosition
-	 popad
+	  invoke ShowCursorPosition
+	  popad
   .else
      invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数 
      ret

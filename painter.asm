@@ -8,7 +8,9 @@ include kernel32.inc
 include comctl32.inc
 include gdi32.inc
 include comdlg32.inc
-include msvcrt.inc  ;for debug
+include msvcrt.inc
+include shell32.inc
+include shlwapi.inc
 
 includelib user32.lib
 includelib msvcrt.lib
@@ -96,6 +98,7 @@ mBitmap ENDS
   nowCanvasOffsetX        dd ?
   nowCanvasOffsetY        dd ?
   nowCanvasZoomLevel      dd 1 ; 一个逻辑像素在屏幕上占据几个实际像素的宽度
+  hBackgroundBrush       HBRUSH ?
   
   historyNums          equ 50                             ;存储 50 条历史记录
   historyBitmap        mBitmap historyNums DUP(<>)  ;历史记录的位图
@@ -128,6 +131,9 @@ mBitmap ENDS
   szLButtonUp         db  "LButtonUp in Canvas",0dh,0ah,0
 ;--------for debug---------
   debugUINT  db "%u", 0Ah, 0Dh, 0
+  debugUINT2  db "%u %u", 0Ah, 0Dh, 0
+  debugUINT4  db "%u %u %u %u", 0Ah, 0Dh, 0
+
 .code
 
 ; 宏定义
@@ -163,47 +169,63 @@ CTEXT MACRO y:VARARG
   EXITM <OFFSET sym>
 ENDM
 
+get_invoke macro dst , name, args: VARARG
+  invoke name, args
+  mov dst, eax
+endm
+
 ; Windows 像素坐标的 offset 是
 ; 是 Canvas 逻辑坐标的
 
+; UNTESTED
 ; 将相对于 Canvas Windows Client Area 的像素坐标转换成为 Canvas 的逻辑坐标
 CoordWindowToCanvas proc coordWindow: PTR POINT
-  sub (POINT PTR [coordWindow]).x, canvasMargin
-  sub (POINT PTR [coordWindow]).y, canvasMargin
+  ; invoke crt_printf, CTEXT("before transformation: ")
+  mov esi, coordWindow
+  ;pushad
+  ;invoke crt_printf, addr debugUINT2, (POINT PTR [esi]).x, (POINT PTR [esi]).y
+  ;popad
+  sub (POINT PTR [esi]).x, canvasMargin
+  sub (POINT PTR [esi]).y, canvasMargin
   mov ebx, nowCanvasZoomLevel
   ; x 坐标
-  mov eax, (POINT PTR [coordWindow]).x
+  mov eax, (POINT PTR [esi]).x
   mov edx, 0
   div ebx
   add eax, nowCanvasOffsetX
-  mov (POINT PTR [coordWindow]).x, eax
+  mov (POINT PTR [esi]).x, eax
   ; y 坐标
-  mov eax, (POINT PTR [coordWindow]).y
+  mov eax, (POINT PTR [esi]).y
   mov edx, 0
   div ebx
   add eax, nowCanvasOffsetY
-  mov (POINT PTR [coordWindow]).y, eax
+  mov (POINT PTR [esi]).y, eax
+  ; pushad
+  ; invoke crt_printf, addr debugUINT2, (POINT PTR [esi]).x, (POINT PTR [esi]).y
+  ; popad 
   ret 
 CoordWindowToCanvas endp
 
+; UNTESTED
 ; 将 Canvas 的逻辑坐标转换成为相对于 Canvas Windows Client Area 的像素坐标
 CoordCanvasToWindow proc coordCanvas: PTR POINT
   ; 如果不在画布左上角的右下方会出问题
+  mov esi, coordCanvas
   mov ebx, nowCanvasZoomLevel
   ; x 坐标
-  mov eax, (POINT PTR [coordCanvas]).x
+  mov eax, (POINT PTR [esi]).x
   sub eax, nowCanvasOffsetX
   mov edx, 0
   mul ebx
   add eax, canvasMargin
-  mov (POINT PTR [coordCanvas]).x, eax
+  mov (POINT PTR [esi]).x, eax
   ; y 坐标
-  mov eax, (POINT PTR [coordCanvas]).y
+  mov eax, (POINT PTR [esi]).y
   sub eax, nowCanvasOffsetY
   mov edx, 0
   mul ebx
   add eax, canvasMargin
-  mov (POINT PTR [coordCanvas]).y, eax
+  mov (POINT PTR [esi]).y, eax
   ret   
 CoordCanvasToWindow endp
 
@@ -340,7 +362,7 @@ InitHistory endp
 ; 处理画布创建
 ; 理论上最开始的时候调用一次
 HandleCanvasCreate proc
-  invoke UpdateCanvasPos ; 更新位置
+  ; invoke UpdateCanvasPos ; 更新位置
   ;在 HistoryBitmap 中插入一个“空白Bitmap” InitHistory
   ; UpdateDrawBufFromHistoryBitmap
   ; invalidaterect 掉整个矩形，或者想办法发一个 WM_PAINT
@@ -400,11 +422,98 @@ HandleMouseLeave proc wParam:DWORD, lParam:DWORD
   ret
 HandleMouseLeave endp
 
+;处理鼠标滚轮
+; 按下 Ctrl 时候，对应缩放操作
+; 没有 Ctrl 的时候，对应上下移动操作
+HandleMouseWheel proc wParam:DWORD, lParam:DWORD
+  xor eax, eax
+  ret
+HandleMouseWheel endp
+
 
 ; 将 drawDCBuf 按照合适的比例和偏移复制到 hCanvas 的 DC 上面
 RenderBitmap proc
   ; 计算范围
+  local tarRect : RECT
+  local cRBP : POINT ; (canvas Right Bottom Point)
+  local wRBP : POINT ; (window RIght Bottom Point)
+  local hCanvasDC : HDC
+  local hTempDC : HDC
+  local hTempBitmap : HBITMAP
+  local paintStruct : PAINTSTRUCT ; 似乎不太需要
+  
+  invoke GetDC, hCanvas ; 获取 DC 
+  mov hCanvasDC, eax
+  invoke CreateCompatibleDC, hCanvasDC ; 和创建 Buffer
+  mov hTempDC, eax
+  invoke ReleaseDC, hCanvas, hCanvasDC
 
+  
+  invoke GetClientRect, hCanvas, addr tarRect ; 获取显示范围(是否包括滚动条？）
+  invoke CreateCompatibleBitmap, hTempDC, tarRect.right, tarRect.bottom ;创建 画布大小的 Bitmap
+  mov hTempBitmap, eax
+  invoke SelectObject, hTempDC, hTempBitmap
+  invoke FillRect, hTempDC, addr tarRect, hBackgroundBrush
+  ; 伸缩，拷贝到画布上面
+  invoke crt_printf, CTEXT("tarRect: ")
+  invoke crt_printf, addr debugUINT2, tarRect.right, tarRect.bottom
+  mov eax, tarRect.right
+  mov cRBP.x, eax
+  mov eax, tarRect.bottom
+  mov cRBP.y, eax
+  invoke CoordWindowToCanvas, addr cRBP ; 获得绘制范围的逻辑坐标
+  ; 绘制范围不能超过画布本身的大小
+  mov eax, cRBP.x
+  .if eax  >= nowCanvasWidth
+    m2m cRBP.x, nowCanvasWidth
+  .endif
+  mov eax, cRBP.y
+  .if eax >= nowCanvasHeight
+    m2m cRBP.y, nowCanvasHeight
+  .endif
+  ; 在画布上实际要画的范围，从 (nowCanvasOffsetX, nowCanvasOfffsetY) 到 cRBP(原来的
+  m2m wRBP.x, cRBP.x
+  m2m wRBP.y, cRBP.y
+  
+  invoke CoordCanvasToWindow, addr wRBP ;转换为在画布窗口上实际的逻辑坐标
+  sub wRBP.x, canvasMargin
+  sub wRBP.y, canvasMargin ; 刨除边缘成为宽高
+
+  mov ecx, cRBP.x
+  mov edx, cRBP.y
+  sub ecx, nowCanvasOffsetX 
+  sub edx, nowCanvasOffsetY ; 刨除边缘变成宽高
+
+  pushad
+  invoke crt_printf, CTEXT("coordinates:",0Ah,0Dh)
+  popad
+
+  pushad
+  invoke crt_printf, addr debugUINT4, canvasMargin, canvasMargin, wRBP.x, wRBP.y
+  popad  
+
+  pushad
+  invoke crt_printf, addr debugUINT4, nowCanvasOffsetX, nowCanvasOffsetY,    ecx,    edx
+  popad
+
+  invoke StretchBlt,  hTempDC,     canvasMargin,     canvasMargin, wRBP.x, wRBP.y,\
+                    drawDCBuf, nowCanvasOffsetX, nowCanvasOffsetY,    ecx,    edx,\
+                     SRCCOPY
+
+  invoke crt_printf, addr debugUINT4, 0, 0, tarRect.right, tarRect.bottom
+
+  invoke BeginPaint, hCanvas, addr paintStruct
+  invoke BitBlt, hCanvasDC, 0, 0, tarRect.right, tarRect.bottom,\
+                 hTempDC, 0, 0, \
+                 SRCCOPY 
+
+
+  invoke EndPaint, hCanvas, addr paintStruct
+  ; 释放 / 删除创建的 DC 和 hDC 
+  invoke DeleteDC, hTempDC
+  invoke DeleteObject, hTempBitmap
+  xor eax,eax
+  ret 
   ; 将计算后的范围利用 StretchBlt 复制到 一个 temp 的buffer上面
   ; 将 tempbuffer 移动到 Buffer 上面
   ret
@@ -412,28 +521,30 @@ RenderBitmap endp
 
 ; 画布的 proc
 ProcWinCanvas proc hWnd, uMsg, wParam, lParam
-  .if uMsg == WM_CREATE
+  ;invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
+  ; ret
+  mov eax, uMsg
+  .if eax == WM_CREATE
     m2m hCanvas, hWnd
     invoke HandleCanvasCreate
-  .elseif uMsg == WM_LBUTTONDOWN
+  .elseif eax == WM_LBUTTONDOWN
     invoke HandleLButtonDown, wParam, lParam
 ;    invoke crt_printf,addr szLButtonDown
-  .elseif uMsg == WM_LBUTTONUP
+  .elseif eax == WM_LBUTTONUP
     invoke HandleLButtonUp, wParam, lParam
 ;    invoke crt_printf,addr szLButtonUp
-  .elseif uMsg == WM_MOUSEMOVE
+  .elseif eax == WM_MOUSEMOVE
     invoke HandleMouseMove, wParam, lParam
 ;    invoke crt_printf,addr szMouseMoveCanvas
-  .elseif uMsg == WM_MOUSELEAVE
+  .elseif eax == WM_MOUSELEAVE
     invoke HandleMouseLeave, wParam, lParam
-  .elseif uMsg == WM_MOUSEWHEEL
-    ;default 
-    invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
-    ret
-  .elseif uMsg == WM_SIZE
+  .elseif eax == WM_MOUSEWHEEL
+    invoke HandleMouseWheel, wParam, lParam
+  .elseif eax == WM_SIZE
     invoke UpdateCanvasPos
-;  .elseif uMsg == WM_PAINT
-;    invoke RenderBitmap
+  .elseif eax == WM_PAINT
+    invoke crt_printf, CTEXT("test_paint", 0Ah, 0Dh) 
+    invoke RenderBitmap
   .else 
     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
     ret ; 这个地方必须要 ret ，因为要返回 DefWindowProc 的返回值
@@ -702,7 +813,7 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   .else
      invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数 
      ret
-     .endif 
+  .endif 
   xor eax,eax
   ret
 ProcWinMain endp
@@ -745,6 +856,7 @@ WinMain proc
   mov @canvasWndClass.style, CS_HREDRAW or CS_VREDRAW
   mov @canvasWndClass.lpfnWndProc, offset ProcWinCanvas
   invoke CreateSolidBrush, 0abababh
+  mov hBackgroundBrush,eax
   mov @canvasWndClass.hbrBackground, eax
   mov @canvasWndClass.lpszClassName, offset szCanvasClassName
   invoke RegisterClassEx, addr @canvasWndClass

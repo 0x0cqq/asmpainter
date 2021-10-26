@@ -56,6 +56,7 @@ ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;窗口运行中的消息处理程序
 ProcWinCanvas PROTO :DWORD,:DWORD,:DWORD,:DWORD   ;画布窗口运行中的消息处理程序
 CreateCanvasWin PROTO
 UpdateCanvasPos PROTO
+UpdateCanvasScrollBar PROTO
 printf PROTO C :PTR BYTE, :VARARG
 sprintf PROTO C :PTR BYTE, :PTR BYTE, :VARARG
 
@@ -535,6 +536,26 @@ HandleMouseWheel proc wParam:DWORD, lParam:DWORD
 HandleMouseWheel endp
 
 
+; 当人为滚动滚动条的时候
+HandleScroll proc 
+  local scrollInfo : SCROLLINFO
+  ; 垂直
+  mov scrollInfo.cbSize, SIZEOF SCROLLINFO
+  mov scrollInfo.fMask, SIF_ALL 
+  invoke GetScrollInfo, hCanvas, SB_VERT, addr scrollInfo
+  m2m nowCanvasOffsetY, scrollInfo.nTrackPos
+  
+  ; 水平
+  mov scrollInfo.cbSize, SIZEOF SCROLLINFO
+  mov scrollInfo.fMask, SIF_ALL 
+  invoke GetScrollInfo, hCanvas, SB_HORZ, addr scrollInfo
+  m2m nowCanvasOffsetX, scrollInfo.nTrackPos
+
+  invoke InvalidateRect, hCanvas, NULL, FALSE
+  ret
+HandleScroll endp
+
+
 ; 将 drawDCBuf 按照合适的比例和偏移复制到 hCanvas 的 DC 上面
 RenderBitmap proc
   ; 计算范围
@@ -601,6 +622,7 @@ RenderBitmap proc
   ; 释放 / 删除创建的 DC 和 hDC 
   invoke DeleteDC, hTempDC
   invoke DeleteObject, hTempBitmap
+  invoke UpdateCanvasScrollBar
   xor eax,eax
   ret 
 RenderBitmap endp
@@ -632,7 +654,12 @@ ProcWinCanvas proc hWnd, uMsg, wParam, lParam
   .elseif eax == WM_PAINT
     invoke RenderBitmap
   .elseif eax == WM_ERASEBKGND
-    
+  .elseif eax == WM_HSCROLL 
+    invoke HandleScroll
+    ; invoke crt_printf, CTEXT("HSCROLL")
+  .elseif eax == WM_VSCROLL
+    invoke HandleScroll
+    ; invoke crt_printf, CTEXT("VSCROLL")
   .else 
     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
     ret ; 这个地方必须要 ret ，因为要返回 DefWindowProc 的返回值
@@ -699,6 +726,41 @@ UpdateCanvasPos proc uses ecx edx ebx
 
   ret  
 UpdateCanvasPos endp
+
+
+; 在画布的范围和大小改变之后，更新滚动条的横纵范围和位置
+UpdateCanvasScrollBar proc
+  local canvasRect: RECT
+  local scrollInfo: SCROLLINFO 
+
+  ; 垂直
+  mov scrollInfo.cbSize, sizeof SCROLLINFO
+  mov scrollInfo.fMask, SIF_ALL
+  m2m scrollInfo.nMin, 0
+  m2m scrollInfo.nPage, 5
+
+  m2m scrollInfo.nMax, nowCanvasHeight
+  m2m scrollInfo.nPos, nowCanvasOffsetY
+  invoke SetScrollInfo , hCanvas, SB_VERT, addr scrollInfo, TRUE
+  ; 水平
+  mov scrollInfo.cbSize, sizeof SCROLLINFO
+  mov scrollInfo.fMask, SIF_ALL
+  m2m scrollInfo.nMin, 0
+  m2m scrollInfo.nPage, 5
+
+  m2m scrollInfo.nMax, nowCanvasWidth
+  m2m scrollInfo.nPos, nowCanvasOffsetX
+  invoke SetScrollInfo , hCanvas, SB_HORZ, addr scrollInfo, TRUE
+  ret 
+UpdateCanvasScrollBar endp
+
+
+; 当滚动条被滚动的时候
+SetCanvasOffsetFromScrollBar proc
+  local scrollInfo: SCROLLINFO 
+  invoke InvalidateRect, hCanvas, NULL, FALSE
+SetCanvasOffsetFromScrollBar endp
+
 
 SetColorInTool proc index:DWORD, color:DWORD
     ;TODO:该函数根据index(前/背景色)和color颜色

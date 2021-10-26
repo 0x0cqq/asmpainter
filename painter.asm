@@ -50,6 +50,9 @@ IDC_ERASER2          EQU            113
 IDC_ERASER4          EQU            114
 IDC_ERASER8          EQU            115
 IDC_ERASER16         EQU            116
+
+;test
+IDB_BITMAP1          EQU            121
 ;-----------------函数原型声明-------------------
 WinMain PROTO                                     ;主窗口
 ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;窗口运行中的消息处理程序
@@ -110,10 +113,14 @@ mBitmap ENDS
   historyBitmapIndex   dd  0       ;当前历史记录位图中即将拷贝进缓存区的位图索引
   ; baseDCBuf          HDC ?       ; 某次绘制位图的基础画板
   drawDCBuf            HDC ?       ; 绘制了当前绘制的画板
-  undoMaxLimit         dd  0       ; 
+  undoMaxLimit         dd  0       ; 撤销次数上限
   startCursorPosition     POINT <?,?> ; 某次 LButtonDown 时候的 Cursor Position
   lastCursorPosition      POINT <?,?> ; 上次 MouseMove 时候的 Cursor Position
   
+  filePath             BYTE  '无标题.bmp',0 ;当前正在编辑的文件路径
+  existFilePath        dd  0           ;判断filePath是否更新
+  
+  szFilename           db MAX_PATH DUP(?)
   stToolBar  equ   this byte  ;定义工具栏按钮
     TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;新建
     TBBUTTON <1,ID_OPEN,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;打开
@@ -126,21 +133,28 @@ mBitmap ENDS
   ControlButtonNum=($-stToolBar)/sizeof TBBUTTON
 
 .const
-  szMainWindowTitle            db "画图",0         ;主窗口标题
-  szWindowClassName            db "MainWindow",0      ;菜单类名称
-  szToolBarClassName           db "ToolbarWindow32",0         
-  szStatusBarClassName         db "msctls_statusbar32",0       
-  szCanvasClassName            db "画布", 0
-  lptbab                       TBADDBITMAP  <NULL,?>
+  szMainWindowTitle     db "画图",0         ;主窗口标题
+  szWindowClassName     db "MainWindow",0      ;菜单类名称
+  szToolBarClassName    db "ToolbarWindow32",0         
+  szStatusBarClassName  db "msctls_statusbar32",0       
+  szCanvasClassName     db "画布", 0
+  szFilter              db '位图(*.bmp)',0,'*.bmp',0;打开文件的文件名限制
+  szDefExt              db 'bmp',0;保存的扩展名
+
+  lptbab                TBADDBITMAP  <NULL,?>
+  
 ;--------for debug---------
   szMouseMoveCanvas   db  "MouseMove in Canvas",0dh,0ah,0
   szLButtonDown       db  "LButtonDown in Canvas",0dh,0ah,0
   szLButtonUp         db  "LButtonUp in Canvas",0dh,0ah,0
+  szOutput            db  "Load Bitmap From File",0dh,0ah,0
+  szOpenCommand       db  "Received OpenCommand",0dh,0ah,0
+ 
 ;--------for debug---------
-  debugUINT  db "%u", 0Ah, 0Dh, 0
+  debugUINT   db "%u", 0Ah, 0Dh, 0
   debugUINT2  db "%u %u", 0Ah, 0Dh, 0
   debugUINT4  db "%u %u %u %u", 0Ah, 0Dh, 0
-
+  szFmt       db  'EAX=%d', 0ah,0dh,0
 .code
 
 ; 宏定义
@@ -364,8 +378,8 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
   LOCAL @hTempBitmap:HBITMAP
   LOCAL @nWidth: DWORD
   LOCAL @nHeight: DWORD
+  
   pushad
-
   mov eax,historyBitmapIndex
   inc eax
   mov historyBitmapIndex,eax
@@ -388,12 +402,10 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
   invoke SelectObject,@hTempDC, @hTempBitmap
   invoke BitBlt, @hTempDC, 0, 0, nWidth, nHeight, drawDCBuf, 0, 0, SRCCOPY
   invoke DeleteDC,@hTempDC
-
-
-  m2m (mBitmap PTR [esi]).bitmap,@hTempBitmap
-  m2m (mBitmap PTR [esi]).nWidth,nWidth
-  m2m (mBitmap PTR [esi]).nHeight,nHeight
-
+  mov esi,historyBitmapIndex 
+  m2m [historyBitmap+esi].bitmap,@hTempBitmap
+  m2m [historyBitmap+esi].nWidth,nWidth
+  m2m [historyBitmap+esi].nHeight,nHeight
   popad
   ret
 UpdateHistoryBitmapFromDrawBuf endp
@@ -454,12 +466,168 @@ HandleCanvasCreate endp
 
 ; 从文件加载
 LoadBitmapFromFile proc
+; TODO:将路径filePath中的位图更新到DrawBuf
+;      并将句柄加载到historyBitmap对应Index
+  LOCAL @hTempBitmap:HBITMAP
+  LOCAL @hWinDC:HDC
+  LOCAL @hTempDC:HDC
 
+  invoke crt_printf,addr szOutput
+  ;将路径filePath中的位图更新到DrawBuf
+  invoke LoadImage,NULL,addr filePath,IMAGE_BITMAP,0,0,LR_LOADFROMFILE
+  mov @hTempBitmap,eax
+  invoke GetDC,hWinMain
+  mov @hWinDC,eax
+  invoke CreateCompatibleDC, @hWinDC
+  mov @hTempDC, eax
+  invoke ReleaseDC, hWinMain,@hWinDC 
+  invoke SelectObject,@hTempDC, @hTempBitmap
+  invoke BitBlt,drawDCBuf, 0, 0,nowCanvasWidth,nowCanvasHeight,@hTempDC , 0, 0, SRCCOPY
+  invoke DeleteDC,@hTempDC
+
+  ;将DrawBuf中的位图更新historyBitmap当前Index
+  ;调用UpdateHistoryBitmapFromDrawBuffer会更新到Index+1的位置
+  ;所以先将historyBitmapIndex减少1
+  mov eax,historyBitmapIndex
+  dec eax
+  mov historyBitmapIndex,eax
+  invoke UpdateHistoryBitmapFromDrawBuffer,nowCanvasWidth,nowCanvasHeight
+  invoke InvalidateRect, hCanvas, NULL, FALSE
+  ret
 LoadBitmapFromFile endp
+
+CreateBitmapInfoStruct proc hBmp:HBITMAP
+  local @bmp:BITMAP
+  local @pbmi:PTR
+  local @cClrBits:DWORD
+  ;检索位图颜色格式、宽度和高度
+  invoke GetObject,hBmp,sizeof BITMAP,addr @bmp
+  movzx eax,@bmp.bmPlanes
+  movzx ebx,@bmp.bmBitsPixel
+  mul ebx
+  mov @cClrBits,eax
+  ;将颜色格式转换为位数
+  .if @cClrBits == 1
+     mov @cClrBits,1 
+  .elseif @cClrBits <= 4
+     mov @cClrBits,4
+  .elseif @cClrBits <= 8
+     mov @cClrBits,8
+  .elseif @cClrBits <=16
+     mov @cClrBits,16
+  .elseif @cClrBits <=24
+     mov @cClrBits,24
+  .else
+     mov @cClrBits,32
+  .endif
+  ;为 BITMAPIINFO 结构分配内存
+  ;包含一个 BITMAPINFOHEADER 结构和一个 RGBQUAD 数组
+  .if @cClrBits < 24
+     mov eax,1
+     mov ecx,@cClrBits
+     shl eax,cl
+     mov ecx,sizeof RGBQUAD
+     mul ecx
+     add eax,sizeof BITMAPINFOHEADER
+     invoke LocalAlloc,LMEM_FIXED or LMEM_ZEROINIT,eax
+     mov @pbmi,eax
+  ;每像素 24 位或每像素 32 位的格式没有RGBQUAD
+  .else
+     invoke LocalAlloc,LMEM_FIXED or LMEM_ZEROINIT,sizeof BITMAPINFOHEADER
+     mov @pbmi,eax
+  .endif
+  ;初始化 BITMAPIINFO 结构中的字段
+  mov esi,@pbmi
+  m2m (BITMAPINFO PTR [esi]).bmiHeader.biSize,sizeof BITMAPINFOHEADER
+  m2m (BITMAPINFO PTR [esi]).bmiHeader.biWidth,@bmp.bmWidth
+  m2m (BITMAPINFO PTR [esi]).bmiHeader.biHeight,@bmp.bmHeight
+  m2m (BITMAPINFO PTR [esi]).bmiHeader.biPlanes,@bmp.bmPlanes
+  m2m (BITMAPINFO PTR [esi]).bmiHeader.biBitCount,@bmp.bmBitsPixel
+  .if @cClrBits <24
+     mov eax,1
+     mov ecx,@cClrBits
+     shl eax,cl
+     mov (BITMAPINFO PTR [esi]).bmiHeader.biClrUsed,eax
+  .endif
+  ;如果位图未压缩，则设置 BI_RGB 标志
+  m2m (BITMAPINFO PTR [esi]).bmiHeader.biCompression,BI_RGB
+  ;计算颜色数组中的字节数索引并将结果存储在 biSizeImage 中
+  ;pbmi->bmiHeader.biSizeImage=((pbmi->bmiHeader.biWidth * cClrBits +31)&~31)/8\ 
+  ;                             * pbmi->bmiHeader.biHeight;
+  mov eax,(BITMAPINFO PTR [esi]).bmiHeader.biWidth
+  mov ebx,@cClrBits
+  mul ebx
+  add eax,31
+  and eax,0ffffffe0h
+  mov ebx,8
+  mov edx,0
+  div ebx
+  mov ebx,(BITMAPINFO PTR [esi]).bmiHeader.biHeight
+  mul ebx
+  mov (BITMAPINFO PTR [esi]).bmiHeader.biSizeImage,eax
+  mov (BITMAPINFO PTR [esi]).bmiHeader.biClrImportant,0
+  mov eax,@pbmi
+  ret
+CreateBitmapInfoStruct endp
 
 ;保存到文件
 SaveBitmapToFile proc
+;TODO:将historyBitmap最后一张保存到路径filePath
+  local @hf:HANDLE
+  local @hdr:BITMAPFILEHEADER
+  local @pbih:PTR  ;pointer to bitmapinfoheader
+  local @pbi:PTR  ;pointer to bitmapinfo
+  local @lpBits:LPBYTE
+  local @dwTotal:DWORD
+  local @cb:DWORD
+  local @hp:PTR
+  local @dwTmp:DWORD
+  local @hbmp:HBITMAP
 
+  mov esi,historyBitmapIndex
+  m2m @hbmp,[historyBitmap+esi].bitmap
+  invoke CreateBitmapInfoStruct,@hbmp
+  mov @pbi,eax
+  mov @pbih,eax
+  mov esi,@pbih
+  invoke GlobalAlloc,GMEM_FIXED, (BITMAPINFOHEADER PTR [esi]).biSizeImage
+  mov @lpBits,eax
+  invoke GetDIBits,drawDCBuf,@hbmp,0,(BITMAPINFOHEADER PTR [esi]).biHeight,@lpBits,\
+           @pbi, DIB_RGB_COLORS
+  invoke CreateFile, addr filePath, GENERIC_READ or GENERIC_WRITE, 0, NULL, \
+           CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL
+  mov @hf,eax
+  mov @hdr.bfType, 4d42h
+  ;Compute the size of the entire file.
+  mov eax, SIZEOF RGBQUAD
+  mov ecx, (BITMAPINFOHEADER PTR [esi]).biClrUsed
+  mul ecx
+  add eax, SIZEOF BITMAPFILEHEADER
+  add eax,(BITMAPINFOHEADER PTR [esi]).biSize
+  add eax,(BITMAPINFOHEADER PTR [esi]).biSizeImage
+  mov @hdr.bfSize,eax
+  mov @hdr.bfReserved1,0
+  mov @hdr.bfReserved2,0
+  ;Compute the offset of the array of color indices
+  sub eax,(BITMAPINFOHEADER PTR [esi]).biSizeImage
+  mov @hdr.bfOffBits,eax
+  ;Copy the BitmapFileHeader into the .BMP file
+  invoke WriteFile,@hf,addr @hdr,sizeof BITMAPFILEHEADER,addr @dwTmp,NULL
+  ;Copy the BitmapInfoHeader and RGBQUAD array into the file
+  mov ebx,sizeof RGBQUAD
+  mov ecx,(BITMAPINFOHEADER PTR [esi]).biClrUsed
+  mul ecx
+  add ebx,sizeof BITMAPINFOHEADER
+  invoke WriteFile,@hf,@pbih,ebx,addr @dwTmp,NULL
+  ;Copy the array of color indices into the .BMP file
+  m2m @dwTotal,(BITMAPINFOHEADER PTR [esi]).biSizeImage
+  m2m @cb,(BITMAPINFOHEADER PTR [esi]).biSizeImage
+  m2m @hp,@lpBits
+  invoke WriteFile,@hf,@hp,@cb,addr @dwTmp,NULL
+  invoke CloseHandle,@hf
+  invoke GlobalFree,@lpBits
+  invoke LocalFree,@pbi
+  ret
 SaveBitmapToFile endp
 
 ; 处理左键按下，也就是开始画图
@@ -811,6 +979,7 @@ UpdateCanvasScrollBar endp
 SetCanvasOffsetFromScrollBar proc
   local scrollInfo: SCROLLINFO 
   invoke InvalidateRect, hCanvas, NULL, FALSE
+  ret
 SetCanvasOffsetFromScrollBar endp
 
 
@@ -904,6 +1073,46 @@ SetColor proc, index:DWORD
   ret
 SetColor endp
 
+OpenFileFromDisk proc
+  local @stOpenFile:OPENFILENAME
+
+  invoke RtlZeroMemory,addr @stOpenFile,sizeof @stOpenFile
+  mov @stOpenFile.lStructSize,sizeof @stOpenFile
+  m2m @stOpenFile.hwndOwner,hWinMain
+  mov @stOpenFile.lpstrFilter,offset szFilter
+  mov @stOpenFile.lpstrFile,offset filePath
+  mov @stOpenFile.nMaxFile,MAX_PATH
+  mov @stOpenFile.Flags,OFN_FILEMUSTEXIST or OFN_PATHMUSTEXIST
+  invoke GetOpenFileName,addr @stOpenFile
+;---test for debug---
+  ;.if eax
+  ;    invoke MessageBox,hWinMain,addr filePath,\
+  ;          addr szMainWindowTitle,MB_OK
+  ;.endif
+;---test for debug---
+  ret
+OpenFileFromDisk endp
+
+SaveBitmapAs proc
+  local @stOpenFile:OPENFILENAME
+
+  invoke RtlZeroMemory,addr @stOpenFile,sizeof @stOpenFile
+  mov @stOpenFile.lStructSize,sizeof @stOpenFile
+  m2m @stOpenFile.hwndOwner,hWinMain
+  mov @stOpenFile.lpstrFilter,offset szFilter
+  mov @stOpenFile.lpstrFile,offset filePath
+  mov @stOpenFile.nMaxFile,MAX_PATH
+  mov @stOpenFile.Flags,OFN_PATHMUSTEXIST
+  mov @stOpenFile.lpstrDefExt,offset szDefExt
+  invoke GetSaveFileName,addr @stOpenFile
+;------test for debug------
+  ;.if eax
+  ;   invoke MessageBox,hWinMain,addr filePath,\
+  ;         addr szMainWindowTitle,MB_OK
+  ;.endif
+;------test for debug------
+  ret 
+SaveBitmapAs endp
 ;主窗口 的 proc 
 ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   local @stPos:POINT
@@ -1014,7 +1223,30 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
          invoke SetColor,1
      .elseif eax ==ID_QUIT
          call Quit
-     .endif  
+     .elseif eax == ID_OPEN
+         invoke OpenFileFromDisk
+         .if eax
+           invoke LoadBitmapFromFile
+         .endif
+     .elseif eax == ID_SAVE_AS
+         invoke SaveBitmapAs
+         .if eax
+           invoke SaveBitmapToFile
+           mov existFilePath,1
+         .endif
+     .elseif eax == ID_SAVE
+         .if existFilePath == 0
+             invoke SaveBitmapAs
+             .if eax
+                invoke SaveBitmapToFile
+                mov existFilePath,1
+             .endif
+         .else
+             invoke SaveBitmapToFile
+         .endif
+     .endif 
+  .elseif eax == WM_MOUSEMOVE
+    call Quit
   .else
      invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数 
      ret
@@ -1106,4 +1338,4 @@ WinMain endp
 start:
   call WinMain
   invoke ExitProcess,NULL
-end start
+end start 

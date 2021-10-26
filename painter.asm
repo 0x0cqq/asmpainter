@@ -84,6 +84,7 @@ mBitmap ENDS
   CoordinateFormat	byte  "%d,%d",0			;显示坐标格式
   TextBuffer		byte  24 DUP(0)	     		;输出缓冲
   
+  
   foregroundColor       dd 0                    ;前景色
   backgroundColor       dd 0ffffffh             ;背景色
   customColorBuffer     dd 16 dup(?)            ;颜色缓冲区，用于自定义颜色
@@ -110,6 +111,8 @@ mBitmap ENDS
   ; baseDCBuf          HDC ?       ; 某次绘制位图的基础画板
   drawDCBuf            HDC ?       ; 绘制了当前绘制的画板
   undoMaxLimit         dd  0       ; 
+  startCursorPosition     POINT <?,?> ; 某次 LButtonDown 时候的 Cursor Position
+  lastCursorPosition      POINT <?,?> ; 上次 MouseMove 时候的 Cursor Position
   
   stToolBar  equ   this byte  ;定义工具栏按钮
     TBBUTTON <0,ID_NEW,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;新建
@@ -182,7 +185,7 @@ modifyWithBound proc var: PTR SDWORD , delta: SDWORD, lowBound : SDWORD , highBo
   mov esi, [var]
   invoke crt_printf, CTEXT("%u",0Ah,0Dh), esi
   mov eax, [esi]
-  add eax, delta
+  sub eax, delta
   mov [esi], eax
   .if eax < lowBound
     m2m [esi], lowBound
@@ -248,7 +251,8 @@ Quit proc
 Quit endp
 
 ; 获取鼠标逻辑坐标
-GetCursorPosition proc
+; 放到 cursorPos 里面
+GetCursorPosition proc cursorPos : PTR POINT
   local point:POINT
   local rect:RECT
   local ifout:dword		;是否超出画布域外
@@ -275,13 +279,14 @@ GetCursorPosition proc
     mov ifout, 1
   .endif
   invoke CoordWindowToCanvas, addr point
+  mov edi, cursorPos
   mov ebx, point.x
-  mov CursorPosition.x, ebx
+  mov (POINT PTR [edi]).x, ebx
   mov ebx, point.y
-  mov CursorPosition.y, ebx
+  mov (POINT PTR [edi]).y, ebx
   .if ifout == 1
-    mov CursorPosition.x, 0
-    mov CursorPosition.y, 0
+    mov (POINT PTR [edi]).x, 0
+    mov (POINT PTR [edi]).y, 0
   .endif
   ret
 GetCursorPosition endp
@@ -289,7 +294,7 @@ GetCursorPosition endp
 ; 显示鼠标的逻辑坐标
 ShowCursorPosition proc
   pushad
-  invoke GetCursorPosition
+  invoke GetCursorPosition, offset CursorPosition
   popad
   invoke sprintf, addr TextBuffer, offset CoordinateFormat, CursorPosition.x, CursorPosition.y ; 格式化输出到字符串
   invoke SendMessage, hWinStatusBar, SB_SETTEXT, 0, addr TextBuffer ; 显示坐标
@@ -346,10 +351,11 @@ UpdateDrawBufFromHistoryBitmap proc
 UpdateDrawBufFromHistoryBitmap endp
 
 ;将当前drawDCBuf转换为Bitmap并存在HistoryBitmap中
-UpdateHistoryBitmapFromDrawBuffer proc, nWidth:DWORD,nHeight:DWORD
+UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
 ;输入参数为当前drawDCBuf的宽度和高度
 ;实现过程：
 ;       先将historyBitmapIndex+1作为新位图的索引
+;       但是要旋转着用啊
 ;       将原来该位置句柄对应的位图释放（因此初始化时一定要将创建50个空位图对应到historyBitmap?）
 ;       再将drawDCBuf复制到创建的新DC上，然后保存位图句柄到historyBitmap
 ;注：此函数中没有判断是否增加撤销上限，调用该函数时需要在后面补充
@@ -390,7 +396,7 @@ UpdateHistoryBitmapFromDrawBuffer proc, nWidth:DWORD,nHeight:DWORD
 
   popad
   ret
-UpdateHistoryBitmapFromDrawBuffer endp
+UpdateHistoryBitmapFromDrawBuf endp
 
 ; 重置整个历史，并且把参数的 bitmap 放到第一个位置上
 InitHistory proc bitmap: HBITMAP, nWidth: DWORD, nHeight:DWORD
@@ -459,9 +465,14 @@ SaveBitmapToFile endp
 ; 处理左键按下，也就是开始画图
 HandleLButtonDown proc wParam:DWORD, lParam:DWORD
   ;TODO
-  ; 标记左键按下
+  ; 标记左键按下（大概不需要记录？）
   ; 复制 HistoryBitmap 到 Buffer 中
+  invoke UpdateDrawBufFromHistoryBitmap
   ; 需要记录最开始的点
+  invoke GetCursorPosition, offset startCursorPosition
+  m2m lastCursorPosition.x, startCursorPosition.x
+  m2m lastCursorPosition.y, startCursorPosition.y
+  invoke InvalidateRect, hCanvas, NULL, FALSE
   xor eax, eax
   ret
 HandleLButtonDown endp
@@ -469,23 +480,64 @@ HandleLButtonDown endp
 ; 处理左键抬起，也就是结束画图
 HandleLButtonUp proc wParam:DWORD, lParam:DWORD
   ; 标记左键抬起
-  ; 把 DrawBuf 的 Bitmap 放置到 HistoryBitmap 中 
-  ; Repaint 
+  ; 把 DrawBuf 的 Bitmap 放置到 HistoryBitmap 中
+  invoke UpdateHistoryBitmapFromDrawBuf, nowCanvasWidth, nowCanvasHeight
+  invoke InvalidateRect, hCanvas, NULL, FALSE
   xor eax, eax
   ret
 HandleLButtonUp endp
 
+
+GetPenWidth proc
+  invoke GetMenuState, hMenu, ID_ONE_PIXEL, MF_BYCOMMAND
+  .if eax & MF_CHECKED
+    mov eax, 1
+    jmp return_width
+  .endif
+  invoke GetMenuState, hMenu, ID_TWO_PIXEL, MF_BYCOMMAND
+  .if eax & MF_CHECKED
+    mov eax, 2
+    jmp return_width
+  .endif
+  invoke GetMenuState, hMenu, ID_FOUR_PIXEL, MF_BYCOMMAND
+  .if eax & MF_CHECKED
+    mov eax, 4
+    jmp return_width
+  .endif
+return_width:
+  ret
+GetPenWidth endp
+
 ; 处理鼠标移动，也就是正在画图
 HandleMouseMove proc wParam:DWORD, lParam:DWORD
-  pushad
+  local nowCursor : POINT
+  .if !(wParam & MK_LBUTTON)
+    jmp final
+  .endif
   invoke ShowCursorPosition ; 显示当前坐标
-  popad
+  
+  invoke GetCursorPosition, addr nowCursor; 更新当前鼠标位置
+  invoke GetMenuState, hMenu, ID_PEN, MF_BYCOMMAND  
+  .if eax & MF_CHECKED ; 选择的是 PEN
+    invoke MoveToEx, drawDCBuf, lastCursorPosition.x, lastCursorPosition.y, NULL
+    invoke GetPenWidth
+    invoke CreatePen, PS_SOLID, eax, foregroundColor
+    invoke SelectObject, drawDCBuf, eax
+    invoke LineTo, drawDCBuf, nowCursor.x, nowCursor.y
+    m2m lastCursorPosition.x, nowCursor.x
+    m2m lastCursorPosition.y, nowCursor.y
+    
+    jmp final
+  .endif
+  invoke UpdateDrawBufFromHistoryBitmap
   ; 判断一下当前是什么移动（需要用一个全局变量维护一下状态栏里面的选取）
   ; 如果不是笔和橡皮这种连续的，就重新复制 HistoryBitmap 到 Buffer 中
   ; 获取当前的鼠标位置（窗口的逻辑坐标），需要利用坐标系变换转换到画布的逻辑坐标
   ; 然后利用这个去画矩形。圆角矩形之类的
   ; 对于笔和橡皮，需要更新“最新的鼠标的位置”
   ; 对于笔和橡皮，可以认为两个 MouseMove 之间的时间很短，因此直接连直线
+final:
+  invoke InvalidateRect, hCanvas,NULL,FALSE
   xor eax, eax
   ret
 HandleMouseMove endp
@@ -763,8 +815,8 @@ SetCanvasOffsetFromScrollBar endp
 
 
 SetColorInTool proc index:DWORD, color:DWORD
-    ;TODO:该函数根据index(前/背景色)和color颜色
-    ;     绘制工具栏上的按钮位图
+    ; 绘制工具栏上的按钮位图
+    ; 该函数根据index(前/背景色)和color颜色
     LOCAL @rect:RECT
     LOCAL @hdcW:HDC
     LOCAL @hdc:HDC
@@ -843,6 +895,12 @@ SetColor proc, index:DWORD
   mov @stcc.lpCustColors,offset customColorBuffer
   invoke ChooseColor,addr @stcc
   invoke SetColorInTool,index,@stcc.rgbResult
+  mov eax, @stcc.rgbResult
+  .if index==0
+     mov foregroundColor, eax
+  .elseif index==1
+     mov backgroundColor, eax
+  .endif
   ret
 SetColor endp
 
@@ -957,11 +1015,6 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      .elseif eax ==ID_QUIT
          call Quit
      .endif  
-  .elseif eax == WM_MOUSEMOVE
-    call Quit
-    pushad
-	  invoke ShowCursorPosition
-	  popad
   .else
      invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数 
      ret

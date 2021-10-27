@@ -108,7 +108,7 @@ mBitmap ENDS
   nowCanvasZoomLevel      dd 1 ; 一个逻辑像素在屏幕上占据几个实际像素的宽度
   hBackgroundBrush       HBRUSH ?
   
-  historyNums          equ 50                             ;存储 50 条历史记录
+  historyNums          equ 64      ;存储 64 条历史记录
   historyBitmap        mBitmap historyNums DUP(<>)  ;历史记录的位图
   historyBitmapIndex   dd  0       ;当前历史记录位图中即将拷贝进缓存区的位图索引
   ; baseDCBuf          HDC ?       ; 某次绘制位图的基础画板
@@ -128,6 +128,7 @@ mBitmap ENDS
     TBBUTTON <7,ID_UNDO,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;撤回
     TBBUTTON <4,ID_PEN,TBSTATE_ENABLED, TBSTYLE_CHECKGROUP, 0, 0, NULL>;画笔
     TBBUTTON <5,ID_ERASER,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP, 0, 0, NULL>;橡皮
+    TBBUTTON <6,NULL,TBSTATE_ENABLED,TBSTYLE_SEP,0,0,NULL>;分割线
     TBBUTTON <10,ID_FOR_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;前景色
     TBBUTTON <11,ID_BACK_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;背景色
   ControlButtonNum=($-stToolBar)/sizeof TBBUTTON
@@ -382,6 +383,9 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
   pushad
   mov eax,historyBitmapIndex
   inc eax
+  .if eax>=64
+    sub eax,6
+  .endif
   mov historyBitmapIndex,eax
   mov edx, 0
   mov ebx, SIZEOF mBitmap ; 这个结构体的字节数
@@ -402,10 +406,16 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
   invoke SelectObject,@hTempDC, @hTempBitmap
   invoke BitBlt, @hTempDC, 0, 0, nWidth, nHeight, drawDCBuf, 0, 0, SRCCOPY
   invoke DeleteDC,@hTempDC
-  mov esi,historyBitmapIndex 
-  m2m [historyBitmap+esi].bitmap,@hTempBitmap
-  m2m [historyBitmap+esi].nWidth,nWidth
-  m2m [historyBitmap+esi].nHeight,nHeight
+
+  mov eax, historyBitmapIndex
+  mov ebx, SIZEOF mBitmap ; 这个结构体的字节数
+  mul ebx
+  mov esi, eax
+  lea ebx, historyBitmap
+  add esi, ebx
+  m2m (mBitmap PTR [esi]).bitmap,@hTempBitmap
+  m2m (mBitmap PTR [esi]).nWidth,nWidth
+  m2m (mBitmap PTR [esi]).nHeight,nHeight
   popad
   ret
 UpdateHistoryBitmapFromDrawBuf endp
@@ -486,12 +496,12 @@ LoadBitmapFromFile proc
   invoke DeleteDC,@hTempDC
 
   ;将DrawBuf中的位图更新historyBitmap当前Index
-  ;调用UpdateHistoryBitmapFromDrawBuffer会更新到Index+1的位置
+  ;调用UpdateHistoryBitmapFromDrawBuf会更新到Index+1的位置
   ;所以先将historyBitmapIndex减少1
   mov eax,historyBitmapIndex
   dec eax
   mov historyBitmapIndex,eax
-  invoke UpdateHistoryBitmapFromDrawBuffer,nowCanvasWidth,nowCanvasHeight
+  invoke UpdateHistoryBitmapFromDrawBuf,nowCanvasWidth,nowCanvasHeight
   invoke InvalidateRect, hCanvas, NULL, FALSE
   ret
 LoadBitmapFromFile endp
@@ -584,8 +594,13 @@ SaveBitmapToFile proc
   local @dwTmp:DWORD
   local @hbmp:HBITMAP
 
-  mov esi,historyBitmapIndex
-  m2m @hbmp,[historyBitmap+esi].bitmap
+  mov eax, historyBitmapIndex
+  mov ebx, SIZEOF mBitmap ; 这个结构体的字节数
+  mul ebx
+  mov esi, eax
+  lea ebx, historyBitmap
+  add esi, ebx
+  m2m @hbmp,(mBitmap PTR [esi]).bitmap
   invoke CreateBitmapInfoStruct,@hbmp
   mov @pbi,eax
   mov @pbih,eax
@@ -649,8 +664,14 @@ HandleLButtonDown endp
 HandleLButtonUp proc wParam:DWORD, lParam:DWORD
   ; 标记左键抬起
   ; 把 DrawBuf 的 Bitmap 放置到 HistoryBitmap 中
+  ; 撤销上限+1
   invoke UpdateHistoryBitmapFromDrawBuf, nowCanvasWidth, nowCanvasHeight
   invoke InvalidateRect, hCanvas, NULL, FALSE
+  .if undoMaxLimit < 64
+    mov eax,undoMaxLimit
+    inc eax
+    mov undoMaxLimit,eax
+  .endif
   xor eax, eax
   ret
 HandleLButtonUp endp
@@ -916,7 +937,6 @@ DrawTextonCanvas proc
   mov hdc, eax
   invoke GetClientRect, hCanvas, addr rect
   invoke DrawText, hdc, CTEXT("test"), -1, addr rect , DT_SINGLELINE or DT_CENTER or DT_VCENTER
- 
   invoke EndPaint, hCanvas, addr ps
   ret
 DrawTextonCanvas endp
@@ -1073,6 +1093,25 @@ SetColor proc, index:DWORD
   ret
 SetColor endp
 
+Undo proc
+;TODO:撤销上一步操作
+;将画板恢复到historyBitmapIndex-1的状态
+ .if undoMaxLimit>0
+   mov eax,undoMaxLimit
+   dec eax
+   mov undoMaxLimit,eax
+   mov eax,historyBitmapIndex
+   add eax,63
+   .if eax>=64
+      sub eax,64
+   .endif
+   mov historyBitmapIndex,eax
+   invoke UpdateDrawBufFromHistoryBitmap
+   invoke InvalidateRect, hCanvas, NULL, FALSE
+ .endif
+ ret
+Undo endp
+
 OpenFileFromDisk proc
   local @stOpenFile:OPENFILENAME
 
@@ -1157,7 +1196,7 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      mov hCurEraser_8,eax
      invoke LoadCursor,hInstance,IDC_ERASER16
      mov hCurEraser_16,eax
-  ;-----------------创建画布窗口-------------------
+  ;-----------------创建画布窗口--------------------
      invoke CreateCanvasWin
 	 
 	 invoke ShowCursorPosition
@@ -1221,8 +1260,10 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
          invoke SetColor,0
      .elseif eax == ID_BACK_COLOR
          invoke SetColor,1
-     .elseif eax ==ID_QUIT
+     .elseif eax == ID_QUIT
          call Quit
+     .elseif eax == ID_UNDO
+         invoke Undo
      .elseif eax == ID_OPEN
          invoke OpenFileFromDisk
          .if eax
@@ -1338,4 +1379,4 @@ WinMain endp
 start:
   call WinMain
   invoke ExitProcess,NULL
-end start 
+end start

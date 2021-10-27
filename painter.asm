@@ -126,6 +126,7 @@ mBitmap ENDS
   lastCursorPosition      POINT <?,?> ; 上次 MouseMove 时候的 Cursor Position
   
   filePath             BYTE  '无标题.bmp',0 ;当前正在编辑的文件路径
+  defaultPath          BYTE  '无标题.bmp',0 ;默认文件路径
   existFilePath        dd  0           ;判断filePath是否更新
   
   szFilename           db MAX_PATH DUP(?)
@@ -1251,6 +1252,7 @@ SaveBitmapAs proc
 ;------test for debug------
   ret 
 SaveBitmapAs endp
+
 ;对话框的 proc
 DialogProc proc hWnd,uMsg,wParam,lParam
    mov eax,uMsg
@@ -1274,8 +1276,79 @@ DialogProc proc hWnd,uMsg,wParam,lParam
    ret
 DialogProc endp
 
-;主窗口 的 proc 
+
+ClearCanvas proc
+;TODO:清空画板为背景色
+  LOCAL @hTempDC:HDC
+  LOCAL @hCanvasDC:HDC
+  LOCAL @hTempBitmap:HBITMAP
+  LOCAL @tempRect:RECT
+  LOCAL @hTempBrush:HBRUSH
+  pushad
+  mov eax,historyBitmapIndex
+  inc eax
+  .if eax>=64
+    sub eax,64
+  .endif
+  mov historyBitmapIndex,eax
+  mov edx, 0
+  mov ebx, SIZEOF mBitmap ; 这个结构体的字节数
+  mul ebx
+  mov esi, eax
+  lea ebx, historyBitmap
+  add esi, ebx
+
+  invoke DeleteObject, (mBitmap PTR [esi]).bitmap
+
+  invoke GetDC,hCanvas
+  mov @hCanvasDC,eax
+  invoke CreateCompatibleDC, @hCanvasDC
+  mov @hTempDC, eax
+  invoke CreateCompatibleBitmap, @hCanvasDC, nowCanvasWidth, nowCanvasHeight
+  mov @hTempBitmap, eax
+  invoke ReleaseDC, hCanvas,@hCanvasDC 
+  invoke SelectObject,@hTempDC, @hTempBitmap
+  invoke CreateSolidBrush, backgroundColor
+  mov @hTempBrush, eax
+  mov @tempRect.top, 0
+  mov @tempRect.left, 0
+  m2m @tempRect.right, nowCanvasWidth
+  m2m @tempRect.bottom, nowCanvasHeight
+  invoke FillRect,@hTempDC, addr @tempRect,@hTempBrush
+  invoke DeleteDC,@hTempDC
+
+  mov eax, historyBitmapIndex
+  mov ebx, SIZEOF mBitmap ; 这个结构体的字节数
+  mul ebx
+  mov esi, eax
+  lea ebx, historyBitmap
+  add esi, ebx
+  m2m (mBitmap PTR [esi]).bitmap,@hTempBitmap
+  m2m (mBitmap PTR [esi]).nWidth,nowCanvasWidth
+  m2m (mBitmap PTR [esi]).nHeight,nowCanvasHeight
+
+  invoke UpdateDrawBufFromHistoryBitmap
+  invoke InvalidateRect, hCanvas, NULL, FALSE
+  popad
+  ret
+ClearCanvas endp
+
+CreateNewFile proc
+;TODO:新建一个画布
+;将原来的路径改为默认
+;将existFilePath置0
+   mov backgroundColor,0ffffffh
+   invoke SetColorInTool,1,backgroundColor
+   mov foregroundColor,0
+   invoke SetColorInTool,0,foregroundColor
+   mov existFilePath,0
+   invoke crt_strcpy,addr filePath,addr defaultPath
+   invoke HandleCanvasCreate
+   ret
+CreateNewFile endp
+
 ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
+;TODO:主窗口的proc 
   local @stPos:POINT
   local @hSysMenu
   local @hBmp:HBITMAP
@@ -1414,6 +1487,10 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
          .else
              invoke SaveBitmapToFile
          .endif
+     .elseif eax == ID_CLEAR
+         invoke ClearCanvas
+     .elseif eax == ID_NEW
+         invoke CreateNewFile
      .endif 
   .elseif eax == WM_MOUSEMOVE
     call Quit

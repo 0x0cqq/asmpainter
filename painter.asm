@@ -39,7 +39,7 @@ ID_ERA_TWO_PIXEL     EQU            40025
 ID_ERA_FOUR_PIXEL    EQU            40026
 ID_ERA_EIGHT_PIXEL   EQU            40027
 ID_ERA_SIXTEEN_PIXEL EQU            40028
-ID_CANVAS_SIZE       EQU            40029
+ID_CANVAS_SIZE       EQU            40029 
 
 ID_STATUSBAR         EQU            100
 IDR_MENU1            EQU            101
@@ -50,9 +50,13 @@ IDC_ERASER2          EQU            113
 IDC_ERASER4          EQU            114
 IDC_ERASER8          EQU            115
 IDC_ERASER16         EQU            116
+IDD_DIALOG1          EQU            124
 
-;test
-IDB_BITMAP1          EQU            121
+IDC_WIDTH            EQU            1001
+IDC_HEIGHT           EQU            1005
+ID_OK                EQU            1008
+ID_CANCEL            EQU            1009
+
 ;-----------------函数原型声明-------------------
 WinMain PROTO                                     ;主窗口
 ProcWinMain PROTO :DWORD,:DWORD,:DWORD,:DWORD     ;窗口运行中的消息处理程序
@@ -106,6 +110,8 @@ mBitmap ENDS
   nowCanvasOffsetX        dd 0
   nowCanvasOffsetY        dd 0
   nowCanvasZoomLevel      dd 1 ; 一个逻辑像素在屏幕上占据几个实际像素的宽度
+  tempCanvasWidth         dd ?
+  tempCanvasHeight        dd ?
   hBackgroundBrush       HBRUSH ?
   
   historyNums          equ 64      ;存储 64 条历史记录
@@ -327,6 +333,7 @@ UpdateDrawBufFromHistoryBitmap proc
   LOCAL @nWidth: DWORD
   LOCAL @nHeight: DWORD
   local @newDrawBufBitmap: HBITMAP
+
   pushad
   ; 从 history 中取来最后一个
   mov eax, historyBitmapIndex
@@ -371,20 +378,20 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
 ;实现过程：
 ;       先将historyBitmapIndex+1作为新位图的索引
 ;       但是要旋转着用啊
-;       将原来该位置句柄对应的位图释放（因此初始化时一定要将创建50个空位图对应到historyBitmap?）
+;       将原来该位置句柄对应的位图释放（因此初始化时一定要将创建64个空位图对应到historyBitmap?）
 ;       再将drawDCBuf复制到创建的新DC上，然后保存位图句柄到historyBitmap
 ;注：此函数中没有判断是否增加撤销上限，调用该函数时需要在后面补充
   LOCAL @hTempDC:HDC
   LOCAL @hCanvasDC:HDC
   LOCAL @hTempBitmap:HBITMAP
-  LOCAL @nWidth: DWORD
-  LOCAL @nHeight: DWORD
+  LOCAL @tempWidth: DWORD
+  LOCAL @tempHeight: DWORD
   
   pushad
   mov eax,historyBitmapIndex
   inc eax
   .if eax>=64
-    sub eax,6
+    sub eax,64
   .endif
   mov historyBitmapIndex,eax
   mov edx, 0
@@ -396,15 +403,29 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
 
   invoke DeleteObject, (mBitmap PTR [esi]).bitmap
 
+  mov eax,nowCanvasHeight
+  .if nHeight < eax
+     m2m @tempHeight,nHeight
+  .else
+     m2m @tempHeight,nowCanvasHeight
+  .endif
+  mov eax,nowCanvasWidth
+  .if nWidth < eax
+     m2m @tempWidth,nWidth
+  .else
+     m2m @tempWidth,nowCanvasWidth
+  .endif
+  
+
   invoke GetDC,hCanvas
   mov @hCanvasDC,eax
   invoke CreateCompatibleDC, @hCanvasDC
   mov @hTempDC, eax
-  invoke CreateCompatibleBitmap, @hCanvasDC, nWidth, nHeight
+  invoke CreateCompatibleBitmap, @hCanvasDC, @tempWidth, @tempHeight
   mov @hTempBitmap, eax
   invoke ReleaseDC, hCanvas,@hCanvasDC 
   invoke SelectObject,@hTempDC, @hTempBitmap
-  invoke BitBlt, @hTempDC, 0, 0, nWidth, nHeight, drawDCBuf, 0, 0, SRCCOPY
+  invoke BitBlt, @hTempDC, 0, 0, @tempWidth, @tempHeight, drawDCBuf, 0, 0, SRCCOPY
   invoke DeleteDC,@hTempDC
 
   mov eax, historyBitmapIndex
@@ -414,8 +435,8 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
   lea ebx, historyBitmap
   add esi, ebx
   m2m (mBitmap PTR [esi]).bitmap,@hTempBitmap
-  m2m (mBitmap PTR [esi]).nWidth,nWidth
-  m2m (mBitmap PTR [esi]).nHeight,nHeight
+  m2m (mBitmap PTR [esi]).nWidth,@tempWidth
+  m2m (mBitmap PTR [esi]).nHeight,@tempHeight
   popad
   ret
 UpdateHistoryBitmapFromDrawBuf endp
@@ -1002,6 +1023,23 @@ SetCanvasOffsetFromScrollBar proc
   ret
 SetCanvasOffsetFromScrollBar endp
 
+ResizeCanvas proc tempWidth:DWORD, tempHeight:DWORD
+;TODO:调整画布大小
+;调用UpdateHistoryBitmapFromDrawBuf函数将画布缩放拷贝到历史记录中
+;增加撤销次数
+;调用UpdateDrawBufFromHistoryBitmap再将Bitmap拷贝到缓冲区
+;更新到hCanvas
+  invoke UpdateHistoryBitmapFromDrawBuf,tempWidth,tempHeight
+  invoke InvalidateRect, hCanvas, NULL, FALSE
+  .if undoMaxLimit<64
+    mov eax,undoMaxLimit
+    inc eax
+    mov undoMaxLimit,eax
+  .endif
+  invoke UpdateDrawBufFromHistoryBitmap
+  invoke InvalidateRect, hCanvas, NULL, FALSE
+  ret
+ResizeCanvas endp
 
 SetColorInTool proc index:DWORD, color:DWORD
     ; 绘制工具栏上的按钮位图
@@ -1152,6 +1190,29 @@ SaveBitmapAs proc
 ;------test for debug------
   ret 
 SaveBitmapAs endp
+;对话框的 proc
+DialogProc proc hWnd,uMsg,wParam,lParam
+   mov eax,uMsg
+   .if eax == WM_INITDIALOG
+      invoke SetDlgItemInt,hWnd,IDC_WIDTH,nowCanvasWidth,FALSE
+      invoke SetDlgItemInt,hWnd,IDC_HEIGHT,nowCanvasHeight,FALSE
+   .elseif eax == WM_COMMAND
+      .if wParam == ID_OK
+         invoke GetDlgItemInt,hWnd,IDC_WIDTH,NULL,FALSE
+         mov tempCanvasWidth,eax
+         invoke GetDlgItemInt,hWnd,IDC_HEIGHT,NULL,FALSE
+         mov tempCanvasHeight,eax
+         invoke EndDialog,hWnd,1
+      .elseif wParam ==ID_CANCEL
+         invoke EndDialog,hWnd,0
+      .endif
+   .elseif eax == WM_CLOSE
+      invoke EndDialog,hWnd,0
+   .endif
+   xor eax,eax
+   ret
+DialogProc endp
+
 ;主窗口 的 proc 
 ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
   local @stPos:POINT
@@ -1264,6 +1325,13 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
          call Quit
      .elseif eax == ID_UNDO
          invoke Undo
+     .elseif eax == ID_CANVAS_SIZE
+         invoke DialogBoxParam,hInstance,IDD_DIALOG1,hWinMain,offset DialogProc,0
+         .if eax
+            .if tempCanvasWidth>0 && tempCanvasHeight>0
+               invoke ResizeCanvas,tempCanvasWidth,tempCanvasHeight
+            .endif
+         .endif
      .elseif eax == ID_OPEN
          invoke OpenFileFromDisk
          .if eax

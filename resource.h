@@ -10,6 +10,13 @@
 #define IDC_ERASER4                     114
 #define IDC_ERASER8                     115
 #define IDC_ERASER16                    116
+#define IDD_DIALOG1                     124
+#define IDC_WIDTH                       1001
+#define IDC_HEIGHT                      1005
+#define IDC_STATIC1                     1006
+#define IDC_STATIC2                     1007
+#define ID_OK                           1008
+#define ID_CANCEL                       1009
 #define ID_NEW                          40001
 #define ID_OPEN                         40002
 #define ID_SAVE                         40003
@@ -43,9 +50,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        124
+#define _APS_NEXT_RESOURCE_VALUE        126
 #define _APS_NEXT_COMMAND_VALUE         40030
-#define _APS_NEXT_CONTROL_VALUE         1001
+#define _APS_NEXT_CONTROL_VALUE         1010
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

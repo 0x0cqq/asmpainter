@@ -127,6 +127,55 @@ IDC_ERASER16            CURSOR                  "Icon\\eraser16.cur"
 
 IDB_CONTROLS            BITMAP                  "Icon\\control.bmp"
 
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG1 DIALOGEX 0, 0, 192, 86
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "画布大小"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "确定",ID_OK,29,57,50,14
+    PUSHBUTTON      "取消",ID_CANCEL,111,57,50,14
+    EDITTEXT        IDC_WIDTH,87,17,56,12,ES_AUTOHSCROLL
+    EDITTEXT        IDC_HEIGHT,87,34,56,12,ES_AUTOHSCROLL
+    LTEXT           "宽度：",IDC_STATIC1,52,20,27,8
+    LTEXT           "高度：",IDC_STATIC2,52,35,27,11
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_DIALOG1, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 185
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 79
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_DIALOG1 AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
+
 #endif    // 中文(简体，中国) resources
 /////////////////////////////////////////////////////////////////////////////
 

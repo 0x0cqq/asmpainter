@@ -36,6 +36,8 @@
     <None Include="Icon\eraser2.cur" />
     <None Include="Icon\eraser4.cur" />
     <None Include="Icon\eraser8.cur" />
+    <None Include="Icon\grab.cur" />
+    <None Include="Icon\grabbing.cur" />
     <None Include="Icon\pen.cur" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

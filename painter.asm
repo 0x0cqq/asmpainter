@@ -120,6 +120,8 @@ mBitmap ENDS
   ; baseDCBuf          HDC ?       ; 某次绘制位图的基础画板
   drawDCBuf            HDC ?       ; 绘制了当前绘制的画板
   undoMaxLimit         dd  0       ; 撤销次数上限
+  startCanvasOffsetX   dd  0       ; LButtonDown 时候的 Offset，用在拖动
+  startCanvasOffsetY   dd  0
   startCursorPosition     POINT <?,?> ; 某次 LButtonDown 时候的 Cursor Position
   lastCursorPosition      POINT <?,?> ; 上次 MouseMove 时候的 Cursor Position
   
@@ -202,6 +204,7 @@ get_invoke macro dst , name, args: VARARG
   mov dst, eax
 endm
 
+; 有界的修改
 modifyWithBound proc var: PTR SDWORD , delta: SDWORD, lowBound : SDWORD , highBound :SDWORD 
   mov esi, [var]
   invoke crt_printf, CTEXT("%u",0Ah,0Dh), esi
@@ -668,15 +671,16 @@ SaveBitmapToFile endp
 
 ; 处理左键按下，也就是开始画图
 HandleLButtonDown proc wParam:DWORD, lParam:DWORD
-  ;TODO
-  ; 标记左键按下（大概不需要记录？）
   ; 复制 HistoryBitmap 到 Buffer 中
   invoke UpdateDrawBufFromHistoryBitmap
   ; 需要记录最开始的点
   invoke GetCursorPosition, offset startCursorPosition
   m2m lastCursorPosition.x, startCursorPosition.x
   m2m lastCursorPosition.y, startCursorPosition.y
+  m2m startCanvasOffsetX, nowCanvasOffsetX
+  m2m startCanvasOffsetY, nowCanvasOffsetY
   invoke InvalidateRect, hCanvas, NULL, FALSE
+  ; TODO : 如果是拖动的话要更改光标
   xor eax, eax
   ret
 HandleLButtonDown endp
@@ -697,7 +701,8 @@ HandleLButtonUp proc wParam:DWORD, lParam:DWORD
   ret
 HandleLButtonUp endp
 
-
+; 获取笔的宽度
+; 在返回值中返回笔的宽度
 GetPenWidth proc
   invoke GetMenuState, hMenu, ID_ONE_PIXEL, MF_BYCOMMAND
   .if eax & MF_CHECKED
@@ -718,15 +723,47 @@ return_width:
   ret
 GetPenWidth endp
 
+; 获取橡皮的宽度
+; 在返回值中获取橡皮的宽度
+GetEraserWidth proc
+  invoke GetMenuState, hMenu, ID_ERA_TWO_PIXEL, MF_BYCOMMAND
+  .if eax & MF_CHECKED
+    mov eax, 2
+    jmp return_eraser_width
+  .endif
+  invoke GetMenuState, hMenu, ID_ERA_FOUR_PIXEL, MF_BYCOMMAND
+  .if eax & MF_CHECKED
+    mov eax, 4
+    jmp return_eraser_width
+  .endif
+  invoke GetMenuState, hMenu, ID_ERA_EIGHT_PIXEL, MF_BYCOMMAND
+  .if eax & MF_CHECKED
+    mov eax, 8
+    jmp return_eraser_width
+  .endif
+  invoke GetMenuState, hMenu, ID_ERA_SIXTEEN_PIXEL, MF_BYCOMMAND
+  .if eax & MF_CHECKED
+    mov eax, 16
+    jmp return_eraser_width
+  .endif
+return_eraser_width:
+  ret
+GetEraserWidth endp
+
 ; 处理鼠标移动，也就是正在画图
 HandleMouseMove proc wParam:DWORD, lParam:DWORD
   local nowCursor : POINT
+  ; 如果左键没有按下，那没事了
   .if !(wParam & MK_LBUTTON)
     jmp final
   .endif
   invoke ShowCursorPosition ; 显示当前坐标
   
   invoke GetCursorPosition, addr nowCursor; 更新当前鼠标位置
+
+  ; 处理连续变化，也就是可以增量绘制的部分
+  ; 对于笔和橡皮，需要更新“最新的鼠标的位置”
+  ; 对于笔和橡皮，可以认为两个 MouseMove 之间的时间很短，因此直接连直线
   invoke GetMenuState, hMenu, ID_PEN, MF_BYCOMMAND  
   .if eax & MF_CHECKED ; 选择的是 PEN
     invoke MoveToEx, drawDCBuf, lastCursorPosition.x, lastCursorPosition.y, NULL
@@ -736,16 +773,39 @@ HandleMouseMove proc wParam:DWORD, lParam:DWORD
     invoke LineTo, drawDCBuf, nowCursor.x, nowCursor.y
     m2m lastCursorPosition.x, nowCursor.x
     m2m lastCursorPosition.y, nowCursor.y
+    jmp final
+  .endif
+  invoke GetMenuState, hMenu, ID_ERASER, MF_BYCOMMAND  
+  .if eax & MF_CHECKED ; 选择的是 ERASER
+    invoke MoveToEx, drawDCBuf, lastCursorPosition.x, lastCursorPosition.y, NULL
+    invoke GetEraserWidth
+    invoke CreatePen, PS_SOLID, eax, backgroundColor
+    invoke SelectObject, drawDCBuf, eax
+    invoke LineTo, drawDCBuf, nowCursor.x, nowCursor.y
+    m2m lastCursorPosition.x, nowCursor.x
+    m2m lastCursorPosition.y, nowCursor.y
+    jmp final
+  .endif
+  ; TODO: 判断一下是否是拖动 目前认为凡是没选中的都是拖动
+  .if 1
+    m2m nowCanvasOffsetX, startCanvasOffsetX
+    m2m nowCanvasOffsetY, startCanvasOffsetY
+    invoke GetCursorPosition, addr nowCursor; 在旧坐标下计算当前鼠标位置
+    mov eax, nowCursor.x
+    sub eax, startCursorPosition.x
+    invoke modifyWithBound, addr nowCanvasOffsetX, eax, 0, nowCanvasWidth
+    mov eax, nowCursor.y
+    sub eax, startCursorPosition.y
+    invoke modifyWithBound, addr nowCanvasOffsetY, eax, 0, nowCanvasHeight 
     
     jmp final
   .endif
-  invoke UpdateDrawBufFromHistoryBitmap
-  ; 判断一下当前是什么移动（需要用一个全局变量维护一下状态栏里面的选取）
+  invoke UpdateDrawBufFromHistoryBitmap    
   ; 如果不是笔和橡皮这种连续的，就重新复制 HistoryBitmap 到 Buffer 中
   ; 获取当前的鼠标位置（窗口的逻辑坐标），需要利用坐标系变换转换到画布的逻辑坐标
   ; 然后利用这个去画矩形。圆角矩形之类的
-  ; 对于笔和橡皮，需要更新“最新的鼠标的位置”
-  ; 对于笔和橡皮，可以认为两个 MouseMove 之间的时间很短，因此直接连直线
+
+
 final:
   invoke InvalidateRect, hCanvas,NULL,FALSE
   xor eax, eax
@@ -819,6 +879,7 @@ HandleScroll endp
 
 
 ; 将 drawDCBuf 按照合适的比例和偏移复制到 hCanvas 的 DC 上面
+; 同时也重新绘制滚动条 & 更新pos
 RenderBitmap proc
   ; 计算范围
   local tarRect : RECT
@@ -884,7 +945,7 @@ RenderBitmap proc
   ; 释放 / 删除创建的 DC 和 hDC 
   invoke DeleteDC, hTempDC
   invoke DeleteObject, hTempBitmap
-  invoke UpdateCanvasScrollBar
+  invoke UpdateCanvasScrollBar ; 因为可能有 Offset/大小的改变都需要重新绘制
   xor eax,eax
   ret 
 RenderBitmap endp
@@ -1280,7 +1341,7 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
         mov eax,ebx
         .if eax == ID_PEN
             invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurPen
-         .elseif eax == ID_ERASER
+        .elseif eax == ID_ERASER
             invoke GetMenuState,hMenu,ID_ERA_TWO_PIXEL,MF_BYCOMMAND
             .if eax & MF_CHECKED
                invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_2

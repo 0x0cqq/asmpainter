@@ -119,6 +119,10 @@ IDC_ERASER8             CURSOR                  "Icon\\eraser8.cur"
 
 IDC_ERASER16            CURSOR                  "Icon\\eraser16.cur"
 
+IDC_GRAB                CURSOR                  "Icon\\grab.cur"
+
+IDC_GRABBING            CURSOR                  "Icon\\grabbing.cur"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

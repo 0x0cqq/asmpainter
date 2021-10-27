@@ -53,5 +53,11 @@
     <None Include="Icon\eraser2.cur">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="Icon\grab.cur">
+      <Filter>资源文件</Filter>
+    </None>
+    <None Include="Icon\grabbing.cur">
+      <Filter>资源文件</Filter>
+    </None>
   </ItemGroup>
 </Project>

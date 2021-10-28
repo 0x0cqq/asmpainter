@@ -63,15 +63,15 @@ BEGIN
     END
     POPUP "±à¼­"
     BEGIN
-        MENUITEM "³·Ïú",                          40006
+        MENUITEM "³·Ïú",                          ID_UNDO
         MENUITEM "Çå¿Õ",                          ID_CLEAR
     END
     POPUP "Í¼Ïñ"
     BEGIN
         POPUP "¹¤¾ß"
         BEGIN
-            MENUITEM "»­±Ê",                          40009
-            MENUITEM "ÏðÆ¤²Á",                         40010
+            MENUITEM "»­±Ê",                          ID_PEN
+            MENUITEM "ÏðÆ¤²Á",                         ID_ERASER
             MENUITEM "ÓÍÆáÍ°",                         ID_BUCKET
             MENUITEM "ÍÏ¶¯»­²¼",                        ID_DRAG
             MENUITEM SEPARATOR
@@ -82,7 +82,7 @@ BEGIN
         BEGIN
             MENUITEM "1ÏñËØ",                         ID_ONE_PIXEL, CHECKED
             MENUITEM "2ÏñËØ",                         ID_TWO_PIXEL
-            MENUITEM "4ÏñËØ",                         40019
+            MENUITEM "4ÏñËØ",                         ID_FOUR_PIXEL
         END
         POPUP "ÏðÆ¤²Á´óÐ¡"
         BEGIN
@@ -91,7 +91,7 @@ BEGIN
             MENUITEM "8ÏñËØ",                         ID_ERA_EIGHT_PIXEL
             MENUITEM "16ÏñËØ",                        ID_ERA_SIXTEEN_PIXEL
         END
-        MENUITEM "»­²¼´óÐ¡",                        40029
+        MENUITEM "»­²¼´óÐ¡",                        ID_CANVAS_SIZE
     END
 END
 

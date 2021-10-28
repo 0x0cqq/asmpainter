@@ -9,6 +9,7 @@
 #define IDC_ERASER4                     114
 #define IDC_ERASER8                     115
 #define IDC_ERASER16                    116
+#define IDC_EMPTY						117
 #define IDD_DIALOG1                     124
 #define IDC_DRAG                        126
 #define IDB_CONTROLS                    127

@@ -129,6 +129,8 @@ IDC_DRAG                CURSOR                  "Icon\\drag.cur"
 
 IDC_BUCKET              CURSOR                  "Icon\\bucket.cur"
 
+IDC_EMPTY               CURSOR                  "Icon\\empty.cur"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

@@ -4,13 +4,15 @@
 //
 #define IDR_MENU1                       101
 #define IDI_ICON1                       102
-#define IDB_CONTROLS                    103
 #define IDC_PEN                         111
 #define IDC_ERASER2                     113
 #define IDC_ERASER4                     114
 #define IDC_ERASER8                     115
 #define IDC_ERASER16                    116
 #define IDD_DIALOG1                     124
+#define IDC_DRAG                        126
+#define IDB_CONTROLS                    127
+#define IDC_BUCKET                      128
 #define IDC_WIDTH                       1001
 #define IDC_HEIGHT                      1005
 #define IDC_STATIC1                     1006
@@ -39,16 +41,16 @@
 #define ID_ERA_EIGHT_PIXEL              40027
 #define ID_ERA_SIXTEEN_PIXEL            40028
 #define ID_CANVAS_SIZE                  40029
+#define ID_BUCKET                       40031
+#define ID_DRAG                         40035
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        126
-#define _APS_NEXT_COMMAND_VALUE         40030
+#define _APS_NEXT_RESOURCE_VALUE        129
+#define _APS_NEXT_COMMAND_VALUE         40036
 #define _APS_NEXT_CONTROL_VALUE         1010
 #define _APS_NEXT_SYMED_VALUE           101
-#define _APS_NEXT_CONTROL_VALUE         1001
-#define _APS_NEXT_SYMED_VALUE           104
 #endif
 #endif

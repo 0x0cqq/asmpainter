@@ -72,8 +72,10 @@ BEGIN
         BEGIN
             MENUITEM "»­±Ê",                          40009
             MENUITEM "ÏðÆ¤²Á",                         40010
+            MENUITEM "ÓÍÆáÍ°",                         ID_BUCKET
+            MENUITEM "ÍÏ¶¯»­²¼",                        ID_DRAG
             MENUITEM SEPARATOR
-            MENUITEM "Ç°¾°É«",                         40012
+            MENUITEM "Ç°¾°É«",                         ID_FOR_COLOR
             MENUITEM "±³¾°É«",                         ID_BACK_COLOR
         END
         POPUP "»­±Ê´ÖÏ¸"
@@ -123,13 +125,17 @@ IDC_GRAB                CURSOR                  "Icon\\grab.cur"
 
 IDC_GRABBING            CURSOR                  "Icon\\grabbing.cur"
 
+IDC_DRAG                CURSOR                  "Icon\\drag.cur"
+
+IDC_BUCKET              CURSOR                  "Icon\\bucket.cur"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
 // Bitmap
 //
 
-IDB_CONTROLS            BITMAP                  "Icon\\control.bmp"
+IDB_CONTROLS            BITMAP                  "Icon\\controls.bmp"
 
 
 /////////////////////////////////////////////////////////////////////////////

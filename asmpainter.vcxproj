@@ -25,13 +25,15 @@
     <ResourceCompile Include="Resource.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="Icon\control.bmp" />
+    <Image Include="Icon\controls.bmp" />
     <Image Include="Icon\titleIcon.ico" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Icon\bucket.cur" />
+    <None Include="Icon\drag.cur" />
     <None Include="Icon\eraser16.cur" />
     <None Include="Icon\eraser2.cur" />
     <None Include="Icon\eraser4.cur" />

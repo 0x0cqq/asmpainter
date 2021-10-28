@@ -39,18 +39,22 @@ ID_ERA_TWO_PIXEL     EQU            40025
 ID_ERA_FOUR_PIXEL    EQU            40026
 ID_ERA_EIGHT_PIXEL   EQU            40027
 ID_ERA_SIXTEEN_PIXEL EQU            40028
-ID_CANVAS_SIZE       EQU            40029 
+ID_CANVAS_SIZE       EQU            40029
+ID_BUCKET            EQU            40031
+ID_DRAG              EQU            40035
 
 ID_STATUSBAR         EQU            100
 IDR_MENU1            EQU            101
 IDI_ICON1            EQU            102
-IDB_CONTROLS         EQU            103
 IDC_PEN              EQU            111
 IDC_ERASER2          EQU            113
 IDC_ERASER4          EQU            114
 IDC_ERASER8          EQU            115
 IDC_ERASER16         EQU            116
 IDD_DIALOG1          EQU            124
+IDC_DRAG             EQU            126
+IDB_CONTROLS         EQU            127
+IDC_BUCKET           EQU            128
 
 IDC_WIDTH            EQU            1001
 IDC_HEIGHT           EQU            1005
@@ -86,6 +90,8 @@ mBitmap ENDS
   hCurEraser_4      dd ?
   hCurEraser_8      dd ?
   hCurEraser_16     dd ?
+  hCurBucket        dd ?                   ;油桶光标
+  hCurHand          dd ?                   ;拖拽小手光标
 
   CursorPosition	POINT <0,0>			    	;光标逻辑位置
   CoordinateFormat	byte  "%d,%d",0			;显示坐标格式
@@ -137,6 +143,8 @@ mBitmap ENDS
     TBBUTTON <7,ID_UNDO,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;撤回
     TBBUTTON <4,ID_PEN,TBSTATE_ENABLED, TBSTYLE_CHECKGROUP, 0, 0, NULL>;画笔
     TBBUTTON <5,ID_ERASER,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP, 0, 0, NULL>;橡皮
+    TBBUTTON <9,ID_BUCKET,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP,0,0,NULL>;油桶
+    TBBUTTON <3,ID_DRAG,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP,0,0,NULL>;拖拽小手
     TBBUTTON <6,NULL,TBSTATE_ENABLED,TBSTYLE_SEP,0,0,NULL>;分割线
     TBBUTTON <10,ID_FOR_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;前景色
     TBBUTTON <11,ID_BACK_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;背景色
@@ -1391,6 +1399,10 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      mov hCurEraser_8,eax
      invoke LoadCursor,hInstance,IDC_ERASER16
      mov hCurEraser_16,eax
+     invoke LoadCursor,hInstance,IDC_DRAG
+     mov hCurHand,eax
+     invoke LoadCursor,hInstance,IDC_BUCKET
+     mov hCurBucket,eax
   ;-----------------创建画布窗口--------------------
      invoke CreateCanvasWin
 	 
@@ -1432,6 +1444,11 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
                invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEraser_16
             .endif
          .endif
+     ;菜单栏/工具栏选中油桶
+     .elseif eax == ID_BUCKET
+        invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurBucket
+     .elseif eax == ID_DRAG
+        invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurHand
      ;菜单栏改变笔/橡皮的像素大小，进行选中
      .elseif eax>=ID_ONE_PIXEL && eax<=ID_FOUR_PIXEL
          invoke CheckMenuRadioItem,hMenu,ID_ONE_PIXEL,ID_FOUR_PIXEL,eax,MF_BYCOMMAND

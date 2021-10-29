@@ -140,6 +140,8 @@ mBitmap ENDS
   nowCanvasHeight         dd ? 
   nowCanvasOffsetX        dd 0
   nowCanvasOffsetY        dd 0
+  maxCanvasOffsetX        dd ? ;主要的限制来自滚动条，这两个变量在 UpdateScrollBar 里面更新
+  maxCanvasOffsetY        dd ?
   nowCanvasZoomLevel      dd 1 ; 一个逻辑像素在屏幕上占据几个实际像素的宽度
   tempCanvasWidth         dd ?
   tempCanvasHeight        dd ?
@@ -196,6 +198,7 @@ mBitmap ENDS
   szOpenCommand       db  "Received OpenCommand",0dh,0ah,0
  
 ;--------for debug---------
+  debugStr    db "debug", 0Ah, 0Dh, 0
   debugUINT   db "%u", 0Ah, 0Dh, 0
   debugUINT2  db "%u %u", 0Ah, 0Dh, 0
   debugUINT4  db "%u %u %u %u", 0Ah, 0Dh, 0
@@ -243,16 +246,15 @@ endm
 ; 有界的修改
 modifyWithBound proc var: PTR SDWORD , delta: SDWORD, lowBound : SDWORD , highBound :SDWORD 
   mov esi, [var]
-  invoke crt_printf, CTEXT("%u",0Ah,0Dh), esi
+  ; invoke crt_printf, CTEXT("%u",0Ah,0Dh), esi
   mov eax, [esi]
   sub eax, delta
-  mov [esi], eax
-  .if eax < lowBound
-    m2m [esi], lowBound
-  .endif
-  .if eax > highBound
-    m2m [esi], highBound
+  .if SDWORD PTR eax < lowBound
+    m2m eax, lowBound
+  .elseif SDWORD PTR eax > highBound
+    m2m eax, highBound
   .endif 
+  mov [esi], eax
   ret 
 modifyWithBound endp
 
@@ -263,9 +265,12 @@ modifyWithBound endp
 CoordWindowToCanvas proc coordWindow: PTR POINT
   ; invoke crt_printf, CTEXT("before transformation: ")
   mov esi, coordWindow
-
-  sub (POINT PTR [esi]).x, canvasMargin
-  sub (POINT PTR [esi]).y, canvasMargin
+  .if nowCanvasOffsetX == 0
+    sub (POINT PTR [esi]).x, canvasMargin
+  .endif
+  .if nowCanvasOffsetY == 0
+    sub (POINT PTR [esi]).y, canvasMargin
+  .endif
   mov ebx, nowCanvasZoomLevel
   ; x 坐标
   mov eax, (POINT PTR [esi]).x
@@ -292,14 +297,18 @@ CoordCanvasToWindow proc coordCanvas: PTR POINT
   sub eax, nowCanvasOffsetX
   mov edx, 0
   mul ebx
-  add eax, canvasMargin
+  .if nowCanvasOffsetX == 0
+    add eax, canvasMargin
+  .endif
   mov (POINT PTR [esi]).x, eax
   ; y 坐标
   mov eax, (POINT PTR [esi]).y
   sub eax, nowCanvasOffsetY
   mov edx, 0
   mul ebx
-  add eax, canvasMargin
+  .if nowCanvasOffsetY == 0
+    add eax, canvasMargin
+  .endif
   mov (POINT PTR [esi]).y, eax
   ret   
 CoordCanvasToWindow endp
@@ -545,8 +554,8 @@ UpdateDrawBufFromHistoryBitmap proc
   m2m @hTempBitmap,(mBitmap PTR [esi]).bitmap
   m2m @nWidth,(mBitmap PTR [esi]).nWidth
   m2m @nHeight,(mBitmap PTR [esi]).nHeight
-  invoke crt_printf, CTEXT("history map", 0Ah,0Dh)
-  invoke crt_printf, addr debugUINT2, @nWidth, @nHeight
+  ; invoke crt_printf, CTEXT("history map", 0Ah,0Dh)
+  ; invoke crt_printf, addr debugUINT2, @nWidth, @nHeight
 
   invoke GetDC,hCanvas
   mov @hCanvasDC,eax
@@ -1017,10 +1026,10 @@ HandleMouseMove proc wParam:DWORD, lParam:DWORD
     invoke GetCursorPosition, addr nowCursorPos; 在旧坐标下计算当前鼠标位置
     mov eax, nowCursorPos.x
     sub eax, startCursorPosition.x
-    invoke modifyWithBound, addr nowCanvasOffsetX, eax, 0, nowCanvasWidth
+    invoke modifyWithBound, addr nowCanvasOffsetX, eax, 0, maxCanvasOffsetX
     mov eax, nowCursorPos.y
     sub eax, startCursorPosition.y
-    invoke modifyWithBound, addr nowCanvasOffsetY, eax, 0, nowCanvasHeight 
+    invoke modifyWithBound, addr nowCanvasOffsetY, eax, 0, maxCanvasOffsetY
     
     jmp final
   .endif
@@ -1120,7 +1129,7 @@ HandleMouseWheel proc wParam:DWORD, lParam:DWORD
     idiv ecx
     mov dist, eax
     ; control 键没有按下：移动
-    invoke modifyWithBound, addr nowCanvasOffsetY, dist, 0, nowCanvasHeight
+    invoke modifyWithBound, addr nowCanvasOffsetY, dist, 0, maxCanvasOffsetY
   .endif
 
   invoke InvalidateRect, hCanvas, NULL, FALSE ; invalidaterect 掉整个画布，让 WM_PAINT 去更新
@@ -1130,23 +1139,66 @@ HandleMouseWheel endp
 
 
 ; 当人为滚动滚动条的时候
-HandleScroll proc 
-  local scrollInfo : SCROLLINFO
-  ; 垂直
-  mov scrollInfo.cbSize, SIZEOF SCROLLINFO
-  mov scrollInfo.fMask, SIF_ALL 
-  invoke GetScrollInfo, hCanvas, SB_VERT, addr scrollInfo
-  m2m nowCanvasOffsetY, scrollInfo.nTrackPos
-  
-  ; 水平
-  mov scrollInfo.cbSize, SIZEOF SCROLLINFO
-  mov scrollInfo.fMask, SIF_ALL 
-  invoke GetScrollInfo, hCanvas, SB_HORZ, addr scrollInfo
-  m2m nowCanvasOffsetX, scrollInfo.nTrackPos
 
+HandleHScroll proc wParam:DWORD, lParam:DWORD
+  local scrollInfo : SCROLLINFO  
+  ; 水平
+  mov eax, wParam
+  movzx eax, ax
+  .if eax == SB_THUMBTRACK
+    mov scrollInfo.cbSize, SIZEOF SCROLLINFO
+    mov scrollInfo.fMask, SIF_ALL 
+    invoke GetScrollInfo, hCanvas, SB_HORZ, addr scrollInfo
+    m2m nowCanvasOffsetX, scrollInfo.nTrackPos
+  .elseif eax != SB_ENDSCROLL
+    mov ebx, canvasOffsetStep
+    .if eax == SB_LINELEFT
+    .elseif eax == SB_LINERIGHT
+      neg ebx
+    .elseif eax == SB_PAGELEFT
+      shl ebx, 1
+    .elseif eax == SB_PAGERIGHT
+      shl ebx, 1
+      neg ebx
+    .endif
+    invoke modifyWithBound, addr nowCanvasOffsetX, ebx, 0, maxCanvasOffsetX
+  .endif
   invoke InvalidateRect, hCanvas, NULL, FALSE
+  xor eax,eax
   ret
-HandleScroll endp
+HandleHScroll endp
+
+HandleVScroll proc wParam:DWORD, lParam:DWORD
+  ; 垂直
+ local scrollInfo : SCROLLINFO  
+  ; 水平
+  ; invoke crt_printf, addr debugStr
+  mov eax, wParam
+  movzx eax, ax
+  .if eax == SB_THUMBTRACK
+    mov scrollInfo.cbSize, SIZEOF SCROLLINFO
+    mov scrollInfo.fMask, SIF_ALL 
+    invoke GetScrollInfo, hCanvas, SB_VERT, addr scrollInfo
+    m2m nowCanvasOffsetY, scrollInfo.nTrackPos
+  .elseif eax != SB_ENDSCROLL
+    mov ebx, canvasOffsetStep
+    .if eax == SB_LINEUP
+    .elseif eax == SB_LINEDOWN
+      neg ebx
+    .elseif eax == SB_PAGEUP
+      shl ebx, 1
+      neg ebx  
+    .elseif eax == SB_PAGEDOWN
+      shl ebx, 1
+    .endif
+    invoke modifyWithBound, addr nowCanvasOffsetY, ebx, 0, maxCanvasOffsetY
+  .else
+  .endif
+  invoke InvalidateRect, hCanvas, NULL, FALSE 
+  xor eax, eax
+  ret 
+HandleVScroll endp
+
 
 
 ; 将 drawDCBuf 按照合适的比例和偏移复制到 hCanvas 的 DC 上面
@@ -1162,6 +1214,9 @@ RenderBitmap proc
   local hTempBitmap : HBITMAP
   local paintStruct : PAINTSTRUCT ; 似乎不太需要
   
+
+  invoke crt_printf, addr debugUINT, nowCanvasOffsetY
+ 
   invoke GetDC, hCanvas ; 获取 DC 
   mov hCanvasDC, eax
   invoke CreateCompatibleDC, hCanvasDC ; 和创建 Buffer
@@ -1193,16 +1248,29 @@ RenderBitmap proc
   m2m wRBP.y, cRBP.y
   
   invoke CoordCanvasToWindow, addr wRBP ;转换为在画布窗口上实际的逻辑坐标
-  sub wRBP.x, canvasMargin
-  sub wRBP.y, canvasMargin ; 刨除边缘成为宽高
-
+  .if nowCanvasOffsetX == 0
+    sub wRBP.x, canvasMargin
+  .endif
+  .if nowCanvasOffsetY == 0
+    sub wRBP.y, canvasMargin ; 刨除边缘成为宽高
+  .endif
   mov ecx, cRBP.x
   mov edx, cRBP.y
   sub ecx, nowCanvasOffsetX 
   sub edx, nowCanvasOffsetY ; 刨除边缘变成宽高
 
   ; 按照缩放比例伸缩
-  invoke StretchBlt,  hTempDC,     canvasMargin,     canvasMargin, wRBP.x, wRBP.y,\
+  .if nowCanvasOffsetX == 0
+    mov eax, canvasMargin
+  .else
+    mov eax, 0
+  .endif
+  .if nowCanvasOffsetY == 0
+    mov ebx, canvasMargin
+  .else
+    mov ebx, 0
+  .endif
+  invoke StretchBlt,  hTempDC,     eax,     ebx, wRBP.x, wRBP.y,\
                     drawDCBuf, nowCanvasOffsetX, nowCanvasOffsetY,    ecx,    edx,\
                      SRCCOPY
   ; 画橡皮
@@ -1235,7 +1303,6 @@ ProcWinCanvas proc hWnd, uMsg, wParam, lParam
   ; ret
   mov eax, uMsg
   .if eax == WM_CREATE
-    invoke crt_printf, CTEXT("create.")
     m2m hCanvas, hWnd
     invoke HandleCanvasCreate
   .elseif eax == WM_LBUTTONDOWN
@@ -1257,10 +1324,10 @@ ProcWinCanvas proc hWnd, uMsg, wParam, lParam
     invoke RenderBitmap
   .elseif eax == WM_ERASEBKGND
   .elseif eax == WM_HSCROLL 
-    invoke HandleScroll
+    invoke HandleHScroll,wParam,lParam
     ; invoke crt_printf, CTEXT("HSCROLL")
   .elseif eax == WM_VSCROLL
-    invoke HandleScroll
+    invoke HandleVScroll,wParam,lParam
     ; invoke crt_printf, CTEXT("VSCROLL")
   .else 
     invoke DefWindowProc,hWnd,uMsg,wParam,lParam  ;窗口过程中不予处理的消息，传递给此函数
@@ -1333,96 +1400,56 @@ UpdateCanvasPos endp
 UpdateCanvasScrollBar proc
   local canvasRect: RECT
   local scrollInfo: SCROLLINFO 
-
+  invoke GetClientRect, hCanvas, addr canvasRect
   ; 垂直
+  mov eax, canvasRect.bottom
+  mov edx, 0
+  mov ebx, nowCanvasZoomLevel  
+  div ebx
+  ; 一个屏幕有多少逻辑的像素
+  m2m maxCanvasOffsetY, nowCanvasHeight
+  sub maxCanvasOffsetY, eax
+  .if SDWORD PTR maxCanvasOffsetY < 0
+    mov maxCanvasOffsetY, 0
+  .else 
+    add maxCanvasOffsetY, 5
+  .endif 
+  
   mov scrollInfo.cbSize, sizeof SCROLLINFO
-  mov scrollInfo.fMask, SIF_ALL
-  m2m scrollInfo.nMin, 0
-  m2m scrollInfo.nPage, 5
+  mov scrollInfo.fMask, SIF_ALL 
+  mov scrollInfo.nMin, 0
+  mov scrollInfo.nPage, eax
 
   m2m scrollInfo.nMax, nowCanvasHeight
+  add scrollInfo.nMax, 5
   m2m scrollInfo.nPos, nowCanvasOffsetY
   invoke SetScrollInfo , hCanvas, SB_VERT, addr scrollInfo, TRUE
   ; 水平
+  mov eax, canvasRect.right
+  mov edx, 0
+  mov ebx, nowCanvasZoomLevel  
+  div ebx
+  ; 一个屏幕有多少逻辑的像素
+  m2m maxCanvasOffsetX, nowCanvasWidth
+  sub maxCanvasOffsetX, eax
+  .if SDWORD PTR maxCanvasOffsetX < 0
+    mov maxCanvasOffsetX, 0
+  .else 
+    add maxCanvasOffsetX, 5
+  .endif 
+
   mov scrollInfo.cbSize, sizeof SCROLLINFO
-  mov scrollInfo.fMask, SIF_ALL
-  m2m scrollInfo.nMin, 0
-  m2m scrollInfo.nPage, 5
+  mov scrollInfo.fMask, SIF_ALL 
+  mov scrollInfo.nMin, 0
+  mov scrollInfo.nPage, eax
 
   m2m scrollInfo.nMax, nowCanvasWidth
+  add scrollInfo.nMax, 5
   m2m scrollInfo.nPos, nowCanvasOffsetX
   invoke SetScrollInfo , hCanvas, SB_HORZ, addr scrollInfo, TRUE
   ret 
 UpdateCanvasScrollBar endp
 
-UpdateCanvasScrollBar_backup proc
-  local canvasRect: RECT
-  local Pos : DWORD
-  local Maximum : DWORD
-  local scrollInfo: SCROLLINFO 
-
-  invoke GetClientRect, hCanvas, addr canvasRect
-
-  ; 垂直
-  mov eax, nowCanvasHeight
-  mov edx, 0
-  mov ebx, nowCanvasZoomLevel
-  mul ebx
-  add eax, canvasMargin
-  add eax, canvasMargin
-  mov Maximum, eax
-
-  mov edx, 0
-  mov eax, nowCanvasOffsetY
-  mov ebx, nowCanvasZoomLevel
-  mul ebx
-  add eax, canvasMargin
-  mov Pos,eax
-
-
-  mov scrollInfo.cbSize, sizeof SCROLLINFO
-  mov scrollInfo.fMask, SIF_ALL or SIF_DISABLENOSCROLL
-  m2m scrollInfo.nMin, 0
-  m2m scrollInfo.nPage, canvasRect.bottom
-
-  m2m scrollInfo.nMax, Maximum
-  m2m scrollInfo.nPos, Pos
-  invoke SetScrollInfo , hCanvas, SB_VERT, addr scrollInfo, TRUE
-  ; 水平
-  mov eax, nowCanvasWidth
-  mov edx, 0
-  mov ebx, nowCanvasZoomLevel
-  mul ebx
-  add eax, canvasMargin
-  add eax, canvasMargin
-  mov Maximum, eax
-
-  mov edx, 0
-  mov eax, nowCanvasOffsetX
-  mov ebx, nowCanvasZoomLevel
-  mul ebx
-  add eax, canvasMargin
-  mov Pos,eax
-
-
-  mov scrollInfo.cbSize, sizeof SCROLLINFO
-  mov scrollInfo.fMask, SIF_ALL or SIF_DISABLENOSCROLL
-  m2m scrollInfo.nMin, 0
-  m2m scrollInfo.nPage, canvasRect.right
-
-  m2m scrollInfo.nMax, Maximum
-  m2m scrollInfo.nPos, Pos
-  invoke SetScrollInfo , hCanvas, SB_HORZ, addr scrollInfo, TRUE
-  ret 
-UpdateCanvasScrollBar_backup endp
-
-
-; 当滚动条被滚动的时候
-SetCanvasOffsetFromScrollBar proc
-  local scrollInfo: SCROLLINFO 
-  invoke InvalidateRect, hCanvas, NULL, FALSE
-  ret
-SetCanvasOffsetFromScrollBar endp
 
 ResizeCanvas proc tempWidth:DWORD, tempHeight:DWORD
 ;TODO:调整画布大小

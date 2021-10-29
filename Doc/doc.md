@@ -1,3 +1,78 @@
+# 汇编部分大作业文档
+
+## 简介
+
+本程序为采用汇编语言编写的画图程序。
+
+程序的主要功能包括：
+
++ 拥有基本的画图工具，包括铅笔、橡皮、填充、图形（矩形、椭圆、直线）工具；
++ 画布可以缩放、拖动、滚动；
++ 画布可以调整前景色、背景色；
++ 画笔、橡皮可以调整粗细；
++ 画布可以调整大小；
++ 图形工具可以选择填充方式；
++ 可以撤销上一步的绘画；
++ 可以从 bmp 文件打开图片以及保存画布到 bmp 文件。
+
+### 开发环境
+
+使用 Visual Studio 2019 和 masm32 汇编器在 Windows 10 下开发。
+
+## 使用方法
+
+双击打开可执行文件即可。
+
+![](\face.png)
+
+从上往下依次为：菜单栏、工具栏、画布、状态栏。
+
+菜单栏和工具栏可以选择绘图工具或进行操作。
+
+在菜单栏或工具栏选中工具后，点击画布即可进行绘制。
+
+状态栏显示当前光标在画布上的位置。
+
+### 画笔工具
+
+ ![](pen.gif)
+
+### 橡皮工具
+
+![](eraser.gif)
+
+### 油漆工具
+
+![](bucket.gif)
+
+### 撤销
+
+![](undo.gif)
+
+### 图形
+
+![](shape.gif)
+
+![](shape2.gif)
+
+### 缩放、拖动
+
+![](drag_and_scroll.gif)
+
+### 改变画布大小
+
+![](resize.gif)
+
+### 保存
+
+![](save.gif)
+
+### 加载
+
+![](load.gif)
+
+## 实现原理
+
 程序采用 Win32 API 进行绘图，主要运用 GDI 模块。这个模块颇为复杂，在下面做一点微小 的说明。
 
 ---
@@ -21,24 +96,30 @@ GDI 绝大部分的画图函数的第一个参数即为 hDC，是 Device Context
 [^1]: 中文直接翻译为“设备上下文”，但事实上 Contexts 很难找到一个完全对应的中文概念，因此下面就不做翻译。
 [^2]: [About Device Contexts - Win32 apps | Microsoft Docs](https://docs.microsoft.com/en-us/windows/win32/gdi/about-device-contexts)
 
-[^3]: 但既然可以搭一层缓冲区，那么如果把”绘图的目的地“换成内存，就构成了双重缓冲
+[^3]: 但既然可以搭一层缓冲区，那么就可以再来一层如果把”绘图的目的地“换成内存，就构成了双重缓冲。
 
 ---
 
-画图策略上，程序采用双缓冲的方法进行绘图。具体来说，在画布窗口的 [Display Device Contexts](https://docs.microsoft.com/en-us/windows/win32/gdi/display-device-contexts) 之外，保存一个与之 [Compatible](https://docs.microsoft.com/en-us/windows/desktop/api/Wingdi/nf-wingdi-createcompatibledc) 的，内容一致的 [Memory Device Contexts](https://docs.microsoft.com/en-us/windows/win32/gdi/memory-device-contexts) 于内存之中 。在用户使用鼠标在画布上开始绘画（ButtonDown or ButtonMove）时，我们复制一份当前窗口在内存中存储的 Memory Device Contexts 作为缓冲区，将用户的行为绘制到缓冲区中，随后将缓冲区复制到窗口的 Display Device Contexts 之中，并且禁用背景重绘，得到重新绘制的画布。在用户结束绘画（ButtonUp）时，我们将缓冲区的内容复制回窗口对应的 Memory Device Contexts 和窗口自身的 Display Device Contexts；并清除缓冲区。这样的双缓冲绘图方法可以减少窗口的闪烁，加快窗口的响应速度。
+画图策略上，程序采用双缓冲的方法进行绘图。具体来说，在画布窗口的 [Display Device Contexts](https://docs.microsoft.com/en-us/windows/win32/gdi/display-device-contexts) 之外，保存一个与之 [Compatible](https://docs.microsoft.com/en-us/windows/desktop/api/Wingdi/nf-wingdi-createcompatibledc) 的，内容一致的 [Memory Device Contexts](https://docs.microsoft.com/en-us/windows/win32/gdi/memory-device-contexts) 于内存之中 。在用户使用鼠标在画布上开始绘画（ButtonDown or MouseMove）时，我们复制一份当前窗口在内存中存储的 Memory Device Contexts 作为缓冲区，将用户的行为绘制到缓冲区中，随后将缓冲区复制到窗口的 Display Device Contexts 之中，并且禁用背景重绘，得到重新绘制的画布。在用户结束绘画（ButtonUp）时，我们将缓冲区的内容复制回窗口对应的 Memory Device Contexts 和窗口自身的 Display Device Contexts；并清除缓冲区。因为向屏幕上的直接绘制较慢，而向内存绘制，再从内存拷贝到屏幕较快；这样的双缓冲绘图方法可以减少窗口的闪烁，加快窗口的响应速度。
 
+绘图核心的过程是将图片复制和转移。下面列举了一些复制的方法：
 
+1. 从 HDC 到 HBITMAP：GetDC（canvas），CreateCompatibleDC（新CDC） ，CreateCompatibleBitmap（新 CDC 通过SelectObject 绑到其上），BitBlt  复制老 DC 到新 DC
 
-从 HDC 到 HBITMAP：GetDC（canvas），CreateCompatibleDC（新CDC） ，CreateCompatibleBitmap（新CDC通过SelectObject绑到其上），BitBlt  复制老 DC 到新 DC
+2. 从 HBITMAP 到 HDC：CreateCompatiableBitmap（新建一个 HBITMAP ），（目标HDC）SelectObject 中 Select HBITMAP 。
 
-从 HBITMAP 到 HDC：CreateCompatiableBitmap（新建一个HBITMAP），（目标HDC）SelectObject 中 Select HBITMAP 【不再需要复制了，已经载入了】
+3. 从 HDC 到 HDC：直接采用 [BitBlt](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt) 复制
 
-从 HDC 到 HDC：采用 [BitBlt](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-bitblt) 复制
+4. 从 HBITMAP 到 HBITMAP：结合 2 与 1 。
 
-从 HBITMAP 到 HBITMAP：不需要这一环节，或可直接复制内存
+具体的画图，采用了 Win32 API 自带的函数，包括：
 
++ 画笔、橡皮、画直线的 [LineTo](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-lineto) 函数
++ 画矩形的 [Rectangle](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-rectangle) 函数
++ 画椭圆的 [Ellipse](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-ellipse) 函数
 
+## 难点和创新点
 
+1. Win32 API 数量庞杂，文档质量不高，熟悉 Win32 的 API 颇花了一些时间。
 
-
-似乎有些地方不是很清楚，CompatibleDC 的 hbitmap就是目标存储位置，但是普通 DC 的hbitmap仅仅是一个bitmap的画布？并不会修改传入的 hbitmap吗？
+## 小组分工

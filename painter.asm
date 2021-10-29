@@ -59,7 +59,7 @@ IDC_ERASER2          EQU            113
 IDC_ERASER4          EQU            114
 IDC_ERASER8          EQU            115
 IDC_ERASER16         EQU            116
-IDC_EMPTY			       EQU	      		117
+IDC_EMPTY			 EQU	        117
 IDD_DIALOG1          EQU            124
 IDC_DRAG             EQU            126
 IDB_CONTROLS         EQU            127
@@ -107,20 +107,20 @@ mBitmap ENDS
   hCurHand          dd ?                   ;拖拽小手光标 ;用底下两个
   hCurGrab          dd ?                   ;拖拽光标
   hCurGrabbing      dd ?                   ;正在拖拽光标
-  hCurCross         dd ?                   ; 十字光标，用在 SHAPE 
+  hCurCross         dd ?                   ;十字光标，用在 SHAPE 
  
   hCurEmpty    		dd ?					;给橡皮使用
 
-  hCurEraser		HDC NULL					;修改之后的橡皮光标
+  hCurEraser		HDC NULL				;修改之后的橡皮光标
   hEraserBitmap		dd NULL					;橡皮的图
   
   EraserSize		dword	20				;橡皮的边长
   SetEraser			dword	0				;是否是橡皮，是为1
 
 
-  CursorPosition	POINT <0,0>			    	;光标逻辑位置
+  CursorPosition	POINT <0,0>			    ;光标逻辑位置
   CoordinateFormat	byte  "%d,%d",0			;显示坐标格式
-  TextBuffer		byte  24 DUP(0)	     		;输出缓冲
+  TextBuffer		byte  24 DUP(0)	     	;输出缓冲
   
   
   foregroundColor       dd 0                    ;前景色
@@ -160,7 +160,7 @@ mBitmap ENDS
   
   filePath             BYTE  '无标题.bmp',0 ;当前正在编辑的文件路径
   defaultPath          BYTE  '无标题.bmp',0 ;默认文件路径
-  existFilePath        dd  0           ;判断filePath是否更新
+  existFilePath        dd  0                ;判断filePath是否更新
   
   szFilename           db MAX_PATH DUP(?)
   stToolBar  equ   this byte  ;定义工具栏按钮

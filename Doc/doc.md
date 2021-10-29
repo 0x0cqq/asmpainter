@@ -13,7 +13,10 @@
 + 画布可以调整大小；
 + 图形工具可以选择填充方式；
 + 可以撤销上一步的绘画；
-+ 可以从 bmp 文件打开图片以及保存画布到 bmp 文件。
++ 可以清空整个画布为背景色；
++ 可以从 bmp 文件打开图片以及保存画布到 bmp 文件；
++ 可以将打开的bmp文件编辑后直接保存或另存到指定位置；
++ 可以通过新建功能，直接退出当前文件编辑进行新的绘图。
 
 ### 开发环境
 
@@ -23,7 +26,7 @@
 
 双击打开可执行文件即可。
 
-![](\face.png)
+![](face.png)
 
 从上往下依次为：菜单栏、工具栏、画布、状态栏。
 
@@ -53,7 +56,7 @@
 
 ![](shape.gif)
 
-![](shape2.gif)
+![](shape_2.gif)
 
 ### 缩放、拖动
 
@@ -72,6 +75,8 @@
 ![](load.gif)
 
 ## 实现原理
+
+### 绘图原理
 
 程序采用 Win32 API 进行绘图，主要运用 GDI 模块。这个模块颇为复杂，在下面做一点微小 的说明。
 
@@ -118,8 +123,28 @@ GDI 绝大部分的画图函数的第一个参数即为 hDC，是 Device Context
 + 画矩形的 [Rectangle](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-rectangle) 函数
 + 画椭圆的 [Ellipse](https://docs.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-ellipse) 函数
 
+### 撤回原理
+
+程序维护一个长度为64的mBitmap结构体数组作为绘图的历史记录。mBitmap中包含位图句柄及该位图的长度和高度。每次进行绘图前，将索引量Index对应的位图更新到绘图缓冲区，再拷贝到窗口对应的Display Device Contexts。当完成一次操作后(绘制、擦除、填充、改变画布大小等)，程序将绘图缓冲区中的图像拷贝到绘图历史记录数组的Index+1的位置，并将Index自增。当进行撤回时，程序将Index-1位置的位图更新到绘图缓冲区，再拷贝至窗口对应的Display Device Contexts，完成撤回。
+
+### 载入和保存原理
+
+载入功能：程序先调用 Win32 GetOpenFileName 函数使用户选择.bmp文件，并保存其路径到变量。其次调用 Win32 LoadImage函数获取保存路径对应位图的句柄。再生成一个与画布相兼容的Device Context，调用Win32 SelcectObject函数将之与位图绑定。然后调用Win32 BitBlt函数将之复制到画布的绘图缓冲区。最后调用开发绘图功能时编写的绘图缓冲区与位图历史记录转换函数将图像保存到位图。
+
+保存功能：首先定义一个函数CreateBitmapInfoStruct，使用BITMAPINFO结构并为BITMAPINFOHEADER结构中的成员分配内存并对其进行初始化。再定义SaveBitmapToFile函数初始化其余的结构，检索调色板索引的数组，打开文件，复制数据并关闭文件[^4]。具体实现如下：
+
+在CreateBitmapInfoStruct函数中，检索位图颜色、格式、宽度和高度；将颜色格式转化为位数；为BITMAPINFO结构分配内存(包含一个BITMAPINFOHEADER结构和一个RGBQUAD数组)；初始化BITMAPINFO结构的字段；计算颜色数组中的字节索引并储存结果到biSizeImage中。在SaveBitmapToFile函数中，调用CreateBitmpInfoStruct函数获取待保存位图的BITMAPINFO句柄；检索颜色表和来自DIB的调色板索引数组；创建位图文件，通过文件句柄为文件大小、颜色索引数组偏移量等参数赋值；将颜色索引数组、RGBQUAD数组及BITMAPINFOHEADER等结构拷贝至BMP文件；关闭BMP文件。由此，完成了位图的保存。
+
+[^4]: 这部分内容参考：[Windows应用开发_存储图像]([存储图像 - Win32 apps | Microsoft Docs](https://docs.microsoft.com/zh-cn/windows/win32/gdi/storing-an-image?redirectedfrom=MSDN))
+
 ## 难点和创新点
 
-1. Win32 API 数量庞杂，文档质量不高，熟悉 Win32 的 API 颇花了一些时间。
+1. Win32 API 数量庞杂，文档质量不高，熟悉 Win32 的 API 颇花了一些时间。工具栏添加前景色、背景色功能需要改变按钮图标并重新覆盖，这部分接口比较难找。此外，Win32没有保存.bmp文件的函数，需要根据位图句柄，构造位图结构再进行保存，过程比较繁琐。
+2. 汇编语言比较复杂，编写较大规模工程时不太方便，且调试时没有C++等语言方便，编写过程中有时出现关于寄存器使用的bug，比较难于发现。
+3. 相比于传统的画图，我们增加了拖拽功能，方便用户放大图片后进行较精细的绘图。
+4. 我们改造了绘制图形的功能，使之可以选择填充模式（无填充、填充前景色、填充背景色）。用户绘图可以有更多选择，比较方便。
 
-## 小组分工
+## 小组分工       
+
+潘首安: 搭建主窗口程序框架；编写工具栏和菜单栏主体部分及资源文件；开发选择前景色/背景色的功能；开发载入/保存/另存.bmp格式图片功能；开发新建画图的功能；开发撤回和清空功能；开发改变画布大小功能；编写绘图缓冲区和历史位图记录传输的函数接口
+

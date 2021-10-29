@@ -592,8 +592,7 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
   LOCAL @hTempDC:HDC
   LOCAL @hCanvasDC:HDC
   LOCAL @hTempBitmap:HBITMAP
-  LOCAL @tempWidth: DWORD
-  LOCAL @tempHeight: DWORD
+  LOCAL @hTempRect: RECT
   
   pushad
   mov eax,historyBitmapIndex
@@ -611,29 +610,28 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
 
   invoke DeleteObject, (mBitmap PTR [esi]).bitmap
 
-  mov eax,nowCanvasHeight
-  .if nHeight < eax
-     m2m @tempHeight,nHeight
-  .else
-     m2m @tempHeight,nowCanvasHeight
-  .endif
-  mov eax,nowCanvasWidth
-  .if nWidth < eax
-     m2m @tempWidth,nWidth
-  .else
-     m2m @tempWidth,nowCanvasWidth
-  .endif
-  
-
   invoke GetDC,hCanvas
   mov @hCanvasDC,eax
   invoke CreateCompatibleDC, @hCanvasDC
   mov @hTempDC, eax
-  invoke CreateCompatibleBitmap, @hCanvasDC, @tempWidth, @tempHeight
+  invoke CreateCompatibleBitmap, @hCanvasDC, nWidth, nHeight
   mov @hTempBitmap, eax
   invoke ReleaseDC, hCanvas,@hCanvasDC 
   invoke SelectObject,@hTempDC, @hTempBitmap
-  invoke BitBlt, @hTempDC, 0, 0, @tempWidth, @tempHeight, drawDCBuf, 0, 0, SRCCOPY
+  mov @hTempRect.left, 0 
+  mov @hTempRect.top, 0
+  m2m @hTempRect.right, nWidth
+  m2m @hTempRect.bottom, nHeight
+  invoke FillRect, @hTempDC, addr @hTempRect, backgroundColor
+  mov eax, nWidth
+  .if eax > nowCanvasWidth
+    mov eax, nowCanvasWidth
+  .endif
+  mov ebx, nHeight
+  .if ebx > nowCanvasHeight
+    mov ebx, nowCanvasHeight
+  .endif
+  invoke BitBlt, @hTempDC, 0, 0, eax, ebx , drawDCBuf, 0, 0, SRCCOPY
   invoke DeleteDC,@hTempDC
 
   mov eax, historyBitmapIndex
@@ -643,8 +641,8 @@ UpdateHistoryBitmapFromDrawBuf proc, nWidth:DWORD,nHeight:DWORD
   lea ebx, historyBitmap
   add esi, ebx
   m2m (mBitmap PTR [esi]).bitmap,@hTempBitmap
-  m2m (mBitmap PTR [esi]).nWidth,@tempWidth
-  m2m (mBitmap PTR [esi]).nHeight,@tempHeight
+  m2m (mBitmap PTR [esi]).nWidth, nWidth
+  m2m (mBitmap PTR [esi]).nHeight, nHeight
   popad
   ret
 UpdateHistoryBitmapFromDrawBuf endp
@@ -727,10 +725,12 @@ LoadBitmapFromFile proc
   ;将DrawBuf中的位图更新historyBitmap当前Index
   ;调用UpdateHistoryBitmapFromDrawBuf会更新到Index+1的位置
   ;所以先将historyBitmapIndex减少1
-  mov eax,historyBitmapIndex
-  dec eax
-  mov historyBitmapIndex,eax
+  ; mov eax,historyBitmapIndex
+  ;dec eax
+  ; mov historyBitmapIndex,eax
   invoke UpdateHistoryBitmapFromDrawBuf,nowCanvasWidth,nowCanvasHeight
+  invoke UpdateDrawBufFromHistoryBitmap
+
   invoke InvalidateRect, hCanvas, NULL, FALSE
   ret
 LoadBitmapFromFile endp
@@ -1457,15 +1457,16 @@ ResizeCanvas proc tempWidth:DWORD, tempHeight:DWORD
 ;增加撤销次数
 ;调用UpdateDrawBufFromHistoryBitmap再将Bitmap拷贝到缓冲区
 ;更新到hCanvas
+  m2m nowCanvasWidth, tempWidth
+  m2m nowCanvasHeight, tempHeight
   invoke UpdateHistoryBitmapFromDrawBuf,tempWidth,tempHeight
+  invoke UpdateDrawBufFromHistoryBitmap
   invoke InvalidateRect, hCanvas, NULL, FALSE
   .if undoMaxLimit<64
     mov eax,undoMaxLimit
     inc eax
     mov undoMaxLimit,eax
   .endif
-  invoke UpdateDrawBufFromHistoryBitmap
-  invoke InvalidateRect, hCanvas, NULL, FALSE
   ret
 ResizeCanvas endp
 

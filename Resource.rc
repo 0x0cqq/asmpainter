@@ -73,6 +73,7 @@ BEGIN
             MENUITEM "画笔",                          ID_PEN
             MENUITEM "橡皮擦",                         ID_ERASER
             MENUITEM "油漆桶",                         ID_BUCKET
+            MENUITEM "图形工具",                        ID_SHAPE
             MENUITEM "拖动画布",                        ID_DRAG
             MENUITEM SEPARATOR
             MENUITEM "前景色",                         ID_FOR_COLOR
@@ -91,8 +92,20 @@ BEGIN
             MENUITEM "8像素",                         ID_ERA_EIGHT_PIXEL
             MENUITEM "16像素",                        ID_ERA_SIXTEEN_PIXEL
         END
-        MENUITEM "画布大小",                        ID_CANVAS_SIZE
+        POPUP "图形类型"
+        BEGIN
+            MENUITEM "矩形",                          ID_RECTANGLE, CHECKED, MENUBARBREAK
+            MENUITEM "椭圆",                          ID_ELLIPSE
+            MENUITEM "直线",                          ID_LINE
+        END
+        POPUP "图形填充模式"
+        BEGIN
+            MENUITEM "无填充",                         ID_FILLNO
+            MENUITEM "填充前景色",                       ID_FILLFORE
+            MENUITEM "填充背景色",                       ID_FILLBACK, CHECKED
+        END
     END
+    MENUITEM "画布",                          ID_CANVAS_SIZE
 END
 
 

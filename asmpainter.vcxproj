@@ -34,6 +34,7 @@
   <ItemGroup>
     <None Include="Icon\bucket.cur" />
     <None Include="Icon\drag.cur" />
+    <None Include="Icon\empty.cur" />
     <None Include="Icon\eraser16.cur" />
     <None Include="Icon\eraser2.cur" />
     <None Include="Icon\eraser4.cur" />

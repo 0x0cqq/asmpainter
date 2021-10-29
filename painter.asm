@@ -32,6 +32,7 @@ ID_PEN               EQU            40010
 ID_ERASER            EQU            40011
 ID_BUCKET            EQU            40012
 ID_DRAG              EQU            40013
+ID_SHAPE             EQU            40014
 ID_FOR_COLOR         EQU            40020
 ID_BACK_COLOR        EQU            40021
 ID_ONE_PIXEL         EQU            40030
@@ -41,6 +42,12 @@ ID_ERA_TWO_PIXEL     EQU            40040
 ID_ERA_FOUR_PIXEL    EQU            40041
 ID_ERA_EIGHT_PIXEL   EQU            40042
 ID_ERA_SIXTEEN_PIXEL EQU            40043
+ID_RECTANGLE         EQU            40050
+ID_ELLIPSE           EQU            40051
+ID_LINE              EQU            40052
+ID_FILLNO            EQU            40060
+ID_FILLFORE          EQU            40061
+ID_FILLBACK          EQU            40062
 ID_CANVAS_SIZE       EQU            40099
 
 
@@ -52,13 +59,15 @@ IDC_ERASER2          EQU            113
 IDC_ERASER4          EQU            114
 IDC_ERASER8          EQU            115
 IDC_ERASER16         EQU            116
-IDC_EMPTY			 EQU			117
+IDC_EMPTY			       EQU	      		117
 IDD_DIALOG1          EQU            124
 IDC_DRAG             EQU            126
 IDB_CONTROLS         EQU            127
 IDC_BUCKET           EQU            128
 IDC_GRAB             EQU            199
 IDC_GRABBING         EQU            198
+
+
 
 IDC_WIDTH            EQU            1001
 IDC_HEIGHT           EQU            1005
@@ -98,7 +107,8 @@ mBitmap ENDS
   hCurHand          dd ?                   ;拖拽小手光标 ;用底下两个
   hCurGrab          dd ?                   ;拖拽光标
   hCurGrabbing      dd ?                   ;正在拖拽光标
-  
+  hCurCross         dd ?                   ; 十字光标，用在 SHAPE 
+ 
   hCurEmpty    		dd ?					;给橡皮使用
 
   hCurEraser		HDC NULL					;修改之后的橡皮光标
@@ -156,10 +166,12 @@ mBitmap ENDS
     TBBUTTON <1,ID_OPEN,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;打开
     TBBUTTON <2,ID_SAVE,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;保存 
     TBBUTTON <7,ID_UNDO,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;撤回
+    TBBUTTON <6,NULL,TBSTATE_ENABLED,TBSTYLE_SEP,0,0,NULL>;分割线
     TBBUTTON <3,ID_DRAG,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP,0,0,NULL>;拖拽小手
     TBBUTTON <4,ID_PEN,TBSTATE_ENABLED, TBSTYLE_CHECKGROUP, 0, 0, NULL>;画笔
     TBBUTTON <5,ID_ERASER,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP, 0, 0, NULL>;橡皮
     TBBUTTON <9,ID_BUCKET,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP,0,0,NULL>;油桶
+    TBBUTTON <12,ID_SHAPE,TBSTATE_ENABLED,TBSTYLE_CHECKGROUP,0,0,NULL>;油桶
     TBBUTTON <6,NULL,TBSTATE_ENABLED,TBSTYLE_SEP,0,0,NULL>;分割线
     TBBUTTON <10,ID_FOR_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;前景色
     TBBUTTON <11,ID_BACK_COLOR,TBSTATE_ENABLED,TBSTYLE_BUTTON,0,0,NULL>;背景色
@@ -402,7 +414,7 @@ ShowCursorPosition endp
 
 ; 画出位图
 DrawEraser proc hdc:HDC
-	local point:POINT
+  local point:POINT
     local eraserLeftCanvas:DWORD
     local eraserTopCanvas:DWORD
     local eraserFromX:DWORD
@@ -414,10 +426,10 @@ DrawEraser proc hdc:HDC
     local canvasFromX:DWORD
     local canvasFromY:DWORD
     
-	; 获取橡皮起始坐标
-	invoke GetCursorPosition, addr point
-	invoke sprintf, addr TextBuffer, offset CoordinateFormat, point.x, point.y
-	invoke SendMessage, hWinStatusBar, SB_SETTEXT, 0, addr TextBuffer
+    ; 获取橡皮起始坐标
+    invoke GetCursorPosition, addr point
+    invoke sprintf, addr TextBuffer, offset CoordinateFormat, point.x, point.y
+    invoke SendMessage, hWinStatusBar, SB_SETTEXT, 0, addr TextBuffer
     mov eax, EraserSize
     shr eax, 1
     mov edx, point.x
@@ -436,8 +448,8 @@ DrawEraser proc hdc:HDC
     .else
         mov eraserFromY, 0
     .endif
-	
-	; 获取结束坐标
+  
+    ; 获取结束坐标
     mov edx, point.x
     add edx, eax
     .if SDWORD PTR edx < nowCanvasWidth
@@ -455,35 +467,35 @@ DrawEraser proc hdc:HDC
         mov eraserToY, edx
     .endif
     
-	; 坐标变换
+  ; 坐标变换
     mov eax, eraserLeftCanvas
-	mov point.x, eax
-	mov eax, eraserTopCanvas
-	mov point.y, eax
-	invoke CoordCanvasToWindow, addr point
-	mov eax, point.x
+    mov point.x, eax
+    mov eax, eraserTopCanvas
+    mov point.y, eax
+    invoke CoordCanvasToWindow, addr point
+    mov eax, point.x
     mov eraserLeftCanvas, eax
     mov eax, point.y
     mov eraserTopCanvas, eax
     
-	mov eax, eraserFromX
-	mov point.x, eax
-	mov eax, eraserFromY
-	mov point.y, eax
-	invoke CoordCanvasToWindow, addr point
-	mov eax, point.x
+    mov eax, eraserFromX
+    mov point.x, eax
+    mov eax, eraserFromY
+    mov point.y, eax
+    invoke CoordCanvasToWindow, addr point
+    mov eax, point.x
     mov eraserFromX, eax
     mov canvasFromX, eax
-	mov eax, point.y
+    mov eax, point.y
     mov eraserFromY, eax
     mov canvasFromY, eax
-	
-	mov eax, eraserToX
-	mov point.x, eax
-	mov eax, eraserToY
-	mov point.y, eax
-	invoke CoordCanvasToWindow, addr point
-	mov eax, point.x
+  
+    mov eax, eraserToX
+    mov point.x, eax
+    mov eax, eraserToY
+    mov point.y, eax
+    invoke CoordCanvasToWindow, addr point
+    mov eax, point.x
     mov eraserToX, eax
     mov eax, point.y
     mov eraserToY, eax
@@ -503,7 +515,7 @@ DrawEraser proc hdc:HDC
     sub eax, eraserTopCanvas
     mov eraserFromY, eax
     
-	; 画在橡皮上
+    ; 画在橡皮上
     invoke BitBlt, hdc, canvasFromX, canvasFromY, eraserWidth, eraserHeight, hCurEraser, eraserFromX, eraserFromY, SRCCOPY
     
     ret
@@ -863,7 +875,7 @@ HandleLButtonDown proc wParam:DWORD, lParam:DWORD
   m2m lastCursorPosition.y, startCursorPosition.y
   m2m startCanvasOffsetX, nowCanvasOffsetX
   m2m startCanvasOffsetY, nowCanvasOffsetY
-  ; TODO : 如果是拖动的话要更改光标
+  ; 如果是拖动的话要更改光标
   invoke GetMenuState,hMenu,ID_DRAG,MF_BYCOMMAND
   .if eax & MF_CHECKED
      invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurGrabbing
@@ -958,15 +970,16 @@ GetEraserWidth endp
 
 ; 处理鼠标移动，也就是正在画图
 HandleMouseMove proc wParam:DWORD, lParam:DWORD
-  local nowCursor : POINT
+  local nowCursorPos : POINT
+  local logBrushInfo : LOGBRUSH 
+  local eraserWidth  : DWORD
   ; 如果左键没有按下，那没事了
   ; 如果左键没有按下，那没事了
   .if !(wParam & MK_LBUTTON)
     jmp final
   .endif
   invoke ShowCursorPosition ; 显示当前坐标
-  
-  invoke GetCursorPosition, addr nowCursor; 更新当前鼠标位置
+  invoke GetCursorPosition, addr nowCursorPos; 更新当前鼠标位置
 
   ; 处理连续变化，也就是可以增量绘制的部分
   ; 对于笔和橡皮，需要更新“最新的鼠标的位置”
@@ -977,32 +990,35 @@ HandleMouseMove proc wParam:DWORD, lParam:DWORD
     invoke GetPenWidth
     invoke CreatePen, PS_SOLID, eax, foregroundColor
     invoke SelectObject, drawDCBuf, eax
-    invoke LineTo, drawDCBuf, nowCursor.x, nowCursor.y
-    m2m lastCursorPosition.x, nowCursor.x
-    m2m lastCursorPosition.y, nowCursor.y
+    invoke LineTo, drawDCBuf, nowCursorPos.x, nowCursorPos.y
+    m2m lastCursorPosition.x, nowCursorPos.x
+    m2m lastCursorPosition.y, nowCursorPos.y
     jmp final
   .endif
   invoke GetMenuState, hMenu, ID_ERASER, MF_BYCOMMAND  
   .if eax & MF_CHECKED ; 选择的是 ERASER
     invoke MoveToEx, drawDCBuf, lastCursorPosition.x, lastCursorPosition.y, NULL
+    mov logBrushInfo.lbStyle, BS_SOLID
+    m2m logBrushInfo.lbColor, backgroundColor
     invoke GetEraserWidth
-    invoke CreatePen, PS_SOLID, eax, backgroundColor
+    mov eraserWidth,eax
+    invoke ExtCreatePen, PS_GEOMETRIC or PS_SOLID or PS_ENDCAP_SQUARE,eraserWidth , addr logBrushInfo, 0, 0
     invoke SelectObject, drawDCBuf, eax
-    invoke LineTo, drawDCBuf, nowCursor.x, nowCursor.y
-    m2m lastCursorPosition.x, nowCursor.x
-    m2m lastCursorPosition.y, nowCursor.y
+    invoke LineTo, drawDCBuf, nowCursorPos.x, nowCursorPos.y
+    m2m lastCursorPosition.x, nowCursorPos.x
+    m2m lastCursorPosition.y, nowCursorPos.y
     jmp final
   .endif
-  ; TODO: 判断一下是否是拖动 目前认为凡是没选中的都是拖动
+  ; 判断一下是否是拖动 目前认为凡是没选中的都是拖动
   invoke GetMenuState, hMenu, ID_DRAG, MF_BYCOMMAND  
   .if eax & MF_CHECKED
     m2m nowCanvasOffsetX, startCanvasOffsetX
     m2m nowCanvasOffsetY, startCanvasOffsetY
-    invoke GetCursorPosition, addr nowCursor; 在旧坐标下计算当前鼠标位置
-    mov eax, nowCursor.x
+    invoke GetCursorPosition, addr nowCursorPos; 在旧坐标下计算当前鼠标位置
+    mov eax, nowCursorPos.x
     sub eax, startCursorPosition.x
     invoke modifyWithBound, addr nowCanvasOffsetX, eax, 0, nowCanvasWidth
-    mov eax, nowCursor.y
+    mov eax, nowCursorPos.y
     sub eax, startCursorPosition.y
     invoke modifyWithBound, addr nowCanvasOffsetY, eax, 0, nowCanvasHeight 
     
@@ -1010,9 +1026,56 @@ HandleMouseMove proc wParam:DWORD, lParam:DWORD
   .endif
   invoke UpdateDrawBufFromHistoryBitmap    
   ; 如果不是笔和橡皮这种连续的，就重新复制 HistoryBitmap 到 Buffer 中
-  ; 获取当前的鼠标位置（窗口的逻辑坐标），需要利用坐标系变换转换到画布的逻辑坐标
   ; 然后利用这个去画矩形。圆角矩形之类的
+  invoke GetMenuState, hMenu, ID_SHAPE, MF_BYCOMMAND  
+  .if eax & MF_CHECKED
+    invoke GetMenuState, hMenu, ID_FILLNO, MF_BYCOMMAND 
+    .if eax & MF_CHECKED  
+      mov logBrushInfo.lbStyle, BS_NULL
+    .endif 
+    invoke GetMenuState, hMenu, ID_FILLFORE, MF_BYCOMMAND 
+    .if eax & MF_CHECKED  
+      mov logBrushInfo.lbStyle, BS_SOLID
+      m2m logBrushInfo.lbColor, foregroundColor
+    .endif 
+    invoke GetMenuState, hMenu, ID_FILLBACK, MF_BYCOMMAND 
+    .if eax & MF_CHECKED  
+      mov logBrushInfo.lbStyle, BS_SOLID
+      m2m logBrushInfo.lbColor, backgroundColor
+    .endif 
 
+    invoke CreateBrushIndirect, addr logBrushInfo
+    invoke SelectObject, drawDCBuf, eax
+    invoke DeleteObject, eax
+
+    ; Pen
+    invoke GetPenWidth
+    invoke CreatePen, PS_SOLID, eax, foregroundColor
+    invoke SelectObject, drawDCBuf, eax
+
+    invoke GetMenuState, hMenu, ID_RECTANGLE, MF_BYCOMMAND
+    .if eax & MF_CHECKED
+       ; 矩形
+      invoke Rectangle, drawDCBuf, startCursorPosition.x, startCursorPosition.y, \
+                                    nowCursorPos.x, nowCursorPos.y
+      jmp final
+    .endif
+    invoke GetMenuState, hMenu, ID_ELLIPSE, MF_BYCOMMAND
+    .if eax & MF_CHECKED
+       ; 椭圆
+      invoke Ellipse, drawDCBuf, startCursorPosition.x, startCursorPosition.y, \
+                                    nowCursorPos.x, nowCursorPos.y
+      jmp final
+    .endif
+    invoke GetMenuState, hMenu, ID_LINE, MF_BYCOMMAND
+    .if eax & MF_CHECKED
+       ; 直线
+      invoke MoveToEx, drawDCBuf, startCursorPosition.x, startCursorPosition.y, NULL
+      invoke LineTo, drawDCBuf, nowCursorPos.x, nowCursorPos.y
+      jmp final
+    .endif
+    
+  .endif
 
 final:
   invoke InvalidateRect, hCanvas,NULL,FALSE
@@ -1145,9 +1208,9 @@ RenderBitmap proc
   ; 画橡皮
   .IF SetEraser == 1
     invoke GetEraserWidth
-	mov EraserSize, eax
-	invoke UpdateEraser
-	invoke DrawEraser, hTempDC
+    mov EraserSize, eax
+    invoke UpdateEraser
+    invoke DrawEraser, hTempDC
   .ENDIF 
   
   ; 拷贝
@@ -1610,7 +1673,7 @@ ClearCanvas proc
 ClearCanvas endp
 
 CreateNewFile proc
-;TODO:新建一个画布
+;新建一个画布
 ;将原来的路径改为默认
 ;将existFilePath置0
    mov backgroundColor,0ffffffh
@@ -1675,12 +1738,14 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      mov hCurGrabbing,eax
      invoke LoadCursor,hInstance,IDC_BUCKET
      mov hCurBucket,eax
-	 invoke LoadCursor,hInstance,IDC_EMPTY
+     invoke LoadCursor,NULL,IDC_CROSS
+     mov hCurCross,eax
+     invoke LoadCursor,hInstance,IDC_EMPTY
      mov hCurEmpty,eax
   ;-----------------创建画布窗口--------------------
      invoke CreateCanvasWin
-	 
-	 invoke ShowCursorPosition
+   
+   invoke ShowCursorPosition
    .elseif eax == WM_SIZE
      ;使状态栏和工具栏随缩放而缩放
      invoke SendMessage,hWinStatusBar,uMsg,wParam,lParam
@@ -1695,25 +1760,29 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
      .if eax == ID_PEN || eax == ID_ERASER
         mov ebx,eax
         push ebx
-        invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_DRAG,eax,MF_BYCOMMAND
+        invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_SHAPE,eax,MF_BYCOMMAND
         pop ebx
         mov eax,ebx
         .if eax == ID_PEN
-			mov SetEraser, 0
+            mov SetEraser, 0
             invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurPen
         .elseif eax == ID_ERASER
-			mov SetEraser, 1
-			invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEmpty
+            mov SetEraser, 1
+            invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurEmpty
          .endif
      ;菜单栏/工具栏选中油桶
      .elseif eax == ID_BUCKET
-		mov SetEraser, 0
-        invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_DRAG,eax,MF_BYCOMMAND
+        mov SetEraser, 0
+        invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_SHAPE,eax,MF_BYCOMMAND
         invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurBucket
      .elseif eax == ID_DRAG
-		mov SetEraser, 0
-        invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_DRAG,eax,MF_BYCOMMAND
+        mov SetEraser, 0
+        invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_SHAPE,eax,MF_BYCOMMAND
         invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurGrab
+     .elseif eax == ID_SHAPE
+        mov SetEraser, 0
+        invoke CheckMenuRadioItem,hMenu,ID_PEN,ID_SHAPE,eax,MF_BYCOMMAND
+        invoke SetClassLong,hCanvas,GCL_HCURSOR,hCurCross
      ;菜单栏改变笔/橡皮的像素大小，进行选中
      .elseif eax>=ID_ONE_PIXEL && eax<=ID_FOUR_PIXEL
          invoke CheckMenuRadioItem,hMenu,ID_ONE_PIXEL,ID_FOUR_PIXEL,eax,MF_BYCOMMAND
@@ -1723,6 +1792,12 @@ ProcWinMain proc uses ebx edi esi hWnd,uMsg,wParam,lParam
          invoke CheckMenuRadioItem,hMenu,ID_ERA_TWO_PIXEL,ID_ERA_SIXTEEN_PIXEL,eax,MF_BYCOMMAND
          pop ebx
          mov eax,ebx
+     ; 形状
+     .elseif eax>=ID_RECTANGLE && eax<=ID_LINE
+         invoke CheckMenuRadioItem,hMenu,ID_RECTANGLE,ID_LINE,eax,MF_BYCOMMAND
+     ; 填充模式
+     .elseif eax>=ID_FILLNO && eax<=ID_FILLBACK
+         invoke CheckMenuRadioItem,hMenu,ID_FILLNO,ID_FILLBACK,eax,MF_BYCOMMAND
      ;菜单栏退出功能
      .elseif eax == ID_FOR_COLOR
          invoke SetColor,0
